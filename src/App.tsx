@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { auth, db, OperationType, handleFirestoreError, isPlaceholderConfig, testConnection } from './firebase';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { onAuthStateChanged, signOut, signInWithRedirect, getRedirectResult } from 'firebase/auth';
 import { 
   collection, doc, setDoc, deleteDoc, onSnapshot, serverTimestamp, Timestamp, writeBatch 
 } from 'firebase/firestore';
@@ -15,7 +15,6 @@ import {
   Heart, Calendar, FileSpreadsheet, BarChart3, LogOut, CheckSquare, RefreshCw, 
   Settings2, Smartphone, ShieldCheck, Info, Download, Upload, Cloud, CloudOff, Database
 } from 'lucide-react';
-import { signInWithPopup } from 'firebase/auth';
 import { googleProvider } from './firebase';
 
 export default function App() {
@@ -52,6 +51,77 @@ export default function App() {
   // 0. Test connection on initial application boot
   useEffect(() => {
     testConnection();
+  }, []);
+
+  // 0.5 Captura resultado do redirecionamento do Google login
+  useEffect(() => {
+    getRedirectResult(auth)
+      .then(async (result) => {
+        if (!result?.user) return;
+        const currentUser = result.user;
+        setUser(currentUser);
+        setIsLocalDemo(false);
+        localStorage.removeItem('wasInDemo');
+
+        // Sincroniza logs offline se existirem
+        const stored = localStorage.getItem('offlinelogs');
+        if (stored) {
+          const parsedLogs = JSON.parse(stored);
+          if (Array.isArray(parsedLogs) && parsedLogs.length > 0) {
+            const chunkSize = 400;
+            for (let i = 0; i < parsedLogs.length; i += chunkSize) {
+              const chunk = parsedLogs.slice(i, i + chunkSize);
+              const batch = writeBatch(db);
+              for (const incomingLog of chunk) {
+                const logId = incomingLog.date!;
+                const docRef = doc(db, 'users', currentUser.uid, 'logs', logId);
+                const payload = {
+                  userId: currentUser.uid,
+                  date: incomingLog.date!,
+                  sleep: {
+                    status: incomingLog.sleep!.status,
+                    sleepTime: incomingLog.sleep!.sleepTime || '21:00',
+                    wakeTime: incomingLog.sleep!.wakeTime || '07:00',
+                    hoursSlept: Number(incomingLog.sleep!.hoursSlept || 0),
+                    quality: Number(incomingLog.sleep!.quality || 4),
+                    wakeUpCount: Number(incomingLog.sleep!.wakeUpCount || 0),
+                    observations: String(incomingLog.sleep!.observations || '').trim(),
+                  },
+                  seizures: {
+                    occurred: Boolean(incomingLog.seizures!.occurred),
+                    morningCount: Number(incomingLog.seizures!.morningCount || 0),
+                    afternoonCount: Number(incomingLog.seizures!.afternoonCount || 0),
+                    nightCount: Number(incomingLog.seizures!.nightCount || 0),
+                    morningDetails: incomingLog.seizures!.morningDetails || { light: 0, medium: 0, strong: 0 },
+                    afternoonDetails: incomingLog.seizures!.afternoonDetails || { light: 0, medium: 0, strong: 0 },
+                    nightDetails: incomingLog.seizures!.nightDetails || { light: 0, medium: 0, strong: 0 },
+                    totalCount: Number(incomingLog.seizures!.totalCount || 0),
+                    triggers: String(incomingLog.seizures!.triggers || '').trim(),
+                    observations: String(incomingLog.seizures!.observations || '').trim(),
+                  },
+                  medication: {
+                    taken: Boolean(incomingLog.medication!.taken),
+                    observations: String(incomingLog.medication!.observations || '').trim(),
+                  },
+                  createdAt: serverTimestamp(),
+                  updatedAt: serverTimestamp(),
+                };
+                batch.set(docRef, payload);
+              }
+              await batch.commit();
+            }
+            alert(`Login realizado com sucesso! Todos os seus ${parsedLogs.length} logs criados em modo offline foram sincronizados e gravados na nuvem do seu Firestore!`);
+            localStorage.removeItem('offlinelogs');
+          } else {
+            alert('Conta do Google conectada com sucesso! Seus dados agora serão sincronizados e salvos automaticamente na Nuvem.');
+          }
+        } else {
+          alert('Conta do Google conectada com sucesso! Seus dados agora serão sincronizados e salvos automaticamente na Nuvem.');
+        }
+      })
+      .catch((err) => {
+        console.error('Erro ao capturar resultado do redirect:', err);
+      });
   }, []);
 
   // 1. Hook for tracking user auth
@@ -420,86 +490,17 @@ export default function App() {
 
   const handleLoginAndSync = async () => {
     setIsLinkingCloud(true);
-    setSyncStatus('syncing');
     try {
-      const result = await signInWithPopup(auth, googleProvider);
-      const currentUser = result.user;
-      if (currentUser) {
-        setUser(currentUser);
-        setIsLocalDemo(false);
-        localStorage.removeItem('wasInDemo');
-
-        // Check for offline backups to sync up
-        const stored = localStorage.getItem('offlinelogs');
-        if (stored) {
-          const parsedLogs = JSON.parse(stored);
-          if (Array.isArray(parsedLogs) && parsedLogs.length > 0) {
-            const chunkSize = 400;
-            for (let i = 0; i < parsedLogs.length; i += chunkSize) {
-              const chunk = parsedLogs.slice(i, i + chunkSize);
-              const batch = writeBatch(db);
-              
-              for (const incomingLog of chunk) {
-                const logId = incomingLog.date!;
-                const docRef = doc(db, 'users', currentUser.uid, 'logs', logId);
-                
-                const payload = {
-                  userId: currentUser.uid,
-                  date: incomingLog.date!,
-                  sleep: {
-                    status: incomingLog.sleep!.status,
-                    sleepTime: incomingLog.sleep!.sleepTime || '21:00',
-                    wakeTime: incomingLog.sleep!.wakeTime || '07:00',
-                    hoursSlept: Number(incomingLog.sleep!.hoursSlept || 0),
-                    quality: Number(incomingLog.sleep!.quality || 4),
-                    wakeUpCount: Number(incomingLog.sleep!.wakeUpCount || 0),
-                    observations: String(incomingLog.sleep!.observations || '').trim(),
-                  },
-                  seizures: {
-                    occurred: Boolean(incomingLog.seizures!.occurred),
-                    morningCount: Number(incomingLog.seizures!.morningCount || 0),
-                    afternoonCount: Number(incomingLog.seizures!.afternoonCount || 0),
-                    nightCount: Number(incomingLog.seizures!.nightCount || 0),
-                    morningDetails: incomingLog.seizures!.morningDetails || { light: 0, medium: 0, strong: 0 },
-                    afternoonDetails: incomingLog.seizures!.afternoonDetails || { light: 0, medium: 0, strong: 0 },
-                    nightDetails: incomingLog.seizures!.nightDetails || { light: 0, medium: 0, strong: 0 },
-                    totalCount: Number(incomingLog.seizures!.totalCount || 0),
-                    triggers: String(incomingLog.seizures!.triggers || '').trim(),
-                    observations: String(incomingLog.seizures!.observations || '').trim(),
-                  },
-                  medication: {
-                    taken: Boolean(incomingLog.medication!.taken),
-                    observations: String(incomingLog.medication!.observations || '').trim(),
-                  },
-                  createdAt: serverTimestamp(),
-                  updatedAt: serverTimestamp(),
-                };
-                
-                batch.set(docRef, payload);
-              }
-              await batch.commit();
-            }
-            alert(`Login realizado com sucesso! Todos os seus ${parsedLogs.length} logs criados em modo offline foram sincronizados e gravados na nuvem do seu Firestore!`);
-            localStorage.removeItem('offlinelogs');
-          } else {
-            alert('Conta do Google conectada com sucesso! Seus dados agora serão sincronizados e salvos automaticamente na Nuvem.');
-          }
-        } else {
-          alert('Conta do Google conectada com sucesso! Seus dados agora serão sincronizados e salvos automaticamente na Nuvem.');
-        }
-      }
-      setSyncStatus('success');
-      setTimeout(() => setSyncStatus('idle'), 4000);
+      // Usa redirect em vez de popup para evitar bloqueio do navegador
+      await signInWithRedirect(auth, googleProvider);
+      // O resultado será capturado pelo useEffect com getRedirectResult após o redirecionamento
     } catch (err: any) {
       console.error(err);
       setSyncStatus('error');
-      alert("Falha ao autenticar com o Google ou sincronizar dados: " + err.message);
-    } finally {
+      alert("Falha ao iniciar autenticação com o Google: " + err.message);
       setIsLinkingCloud(false);
     }
   };
-
-
 
   if (authLoading) {
     return (
@@ -631,7 +632,7 @@ export default function App() {
                   title="Conectar sua conta do Google e salvar todos os diários criados no banco de dados na nuvem"
                 >
                   <Cloud className="h-4 w-4" />
-                  {isLinkingCloud ? 'Sincronizando...' : 'Conectar e Salvar na Nuvem'}
+                  {isLinkingCloud ? 'Redirecionando...' : 'Conectar e Salvar na Nuvem'}
                 </button>
               </div>
             </div>
