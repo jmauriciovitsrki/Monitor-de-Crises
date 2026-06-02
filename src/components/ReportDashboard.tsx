@@ -158,13 +158,28 @@ export default function ReportDashboard({ logs }: ReportDashboardProps) {
     window.print();
   };
 
+  const getPeriodRangeText = () => {
+    if (filteredLogs.length === 0) {
+      if (period === 'custom' && startDateStr && endDateStr) {
+        return `Período selecionado: ${formatLocalDateStr(startDateStr)} até ${formatLocalDateStr(endDateStr)} (Nenhum registro encontrado)`;
+      }
+      return 'Nenhum registro no período';
+    }
+    const firstDate = filteredLogs[0].date;
+    const lastDate = filteredLogs[filteredLogs.length - 1].date;
+    return `Período do Relatório: ${formatLocalDateStr(firstDate)} até ${formatLocalDateStr(lastDate)}`;
+  };
+
   return (
     <div className="space-y-6" id="reports-dashboard">
       {/* Search selection top panel */}
       <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-extrabold text-slate-800">Relatórios e Estatísticas</h2>
-          <p className="text-xs text-slate-400">Analise tendências, hábitos e correlacione desvios no sono ou medicamentos</p>
+          <p className="text-xs text-slate-400 mb-1.5 font-medium text-slate-400">Analise tendências, hábitos e correlacione desvios no sono ou medicamentos</p>
+          <div className="text-xs font-bold text-rose-500 bg-rose-50/50 px-3 py-1 rounded-xl border border-rose-100/50 inline-block shadow-2xs">
+            {getPeriodRangeText()}
+          </div>
         </div>
 
         {/* Filters */}
