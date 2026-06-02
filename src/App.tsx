@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { auth, db, OperationType, handleFirestoreError, isPlaceholderConfig } from './firebase';
+import { auth, db, OperationType, handleFirestoreError, isPlaceholderConfig, testConnection } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { 
-  collection, doc, setDoc, deleteDoc, onSnapshot, serverTimestamp, Timestamp 
+  collection, doc, setDoc, deleteDoc, onSnapshot, serverTimestamp, Timestamp, writeBatch 
 } from 'firebase/firestore';
 import { DailyLog, SleepStatus, SeizureTimingCounts } from './types';
 import AuthScreen from './components/AuthScreen';
@@ -44,6 +44,11 @@ export default function App() {
     const day = String(d.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
   };
+
+  // 0. Test connection on initial application boot
+  useEffect(() => {
+    testConnection();
+  }, []);
 
   // 1. Hook for tracking user auth
   useEffect(() => {
@@ -278,51 +283,60 @@ export default function App() {
       localStorage.setItem('offlinelogs', JSON.stringify(merged));
       setShowImporter(false);
     } else if (user) {
-      // Loop with sequential Firestore writes for robustness
-      for (const incomingLog of parsedLogs) {
-        const logId = incomingLog.date!;
-        const docRef = doc(db, 'users', user.uid, 'logs', logId);
-        
-        const localExisting = logs.find(log => log.date === logId);
+      // Use Firestore writeBatch for high performance chunked database transactions (max 500 records per batch)
+      const chunkSize = 400;
+      try {
+        for (let i = 0; i < parsedLogs.length; i += chunkSize) {
+          const chunk = parsedLogs.slice(i, i + chunkSize);
+          const batch = writeBatch(db);
+          
+          for (const incomingLog of chunk) {
+            const logId = incomingLog.date!;
+            const docRef = doc(db, 'users', user.uid, 'logs', logId);
+            
+            const localExisting = logs.find(log => log.date === logId);
 
-        const payload = {
-          userId: user.uid,
-          date: incomingLog.date!,
-          sleep: {
-            status: incomingLog.sleep!.status,
-            sleepTime: incomingLog.sleep!.sleepTime || '21:00',
-            wakeTime: incomingLog.sleep!.wakeTime || '07:00',
-            hoursSlept: Number(incomingLog.sleep!.hoursSlept || 0),
-            quality: Number(incomingLog.sleep!.quality || 4),
-            wakeUpCount: Number(incomingLog.sleep!.wakeUpCount || 0),
-            observations: String(incomingLog.sleep!.observations || '').trim(),
-          },
-          seizures: {
-            occurred: Boolean(incomingLog.seizures!.occurred),
-            morningCount: Number(incomingLog.seizures!.morningCount || 0),
-            afternoonCount: Number(incomingLog.seizures!.afternoonCount || 0),
-            nightCount: Number(incomingLog.seizures!.nightCount || 0),
-            morningDetails: incomingLog.seizures!.morningDetails || { light: 0, medium: 0, strong: 0 },
-            afternoonDetails: incomingLog.seizures!.afternoonDetails || { light: 0, medium: 0, strong: 0 },
-            nightDetails: incomingLog.seizures!.nightDetails || { light: 0, medium: 0, strong: 0 },
-            totalCount: Number(incomingLog.seizures!.totalCount || 0),
-            triggers: String(incomingLog.seizures!.triggers || '').trim(),
-            observations: String(incomingLog.seizures!.observations || '').trim(),
-          },
-          medication: {
-            taken: Boolean(incomingLog.medication!.taken),
-            observations: String(incomingLog.medication!.observations || '').trim(),
-          },
-          createdAt: localExisting ? Timestamp.fromDate(new Date(localExisting.createdAt)) : serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        };
+            const payload = {
+              userId: user.uid,
+              date: incomingLog.date!,
+              sleep: {
+                status: incomingLog.sleep!.status,
+                sleepTime: incomingLog.sleep!.sleepTime || '21:00',
+                wakeTime: incomingLog.sleep!.wakeTime || '07:00',
+                hoursSlept: Number(incomingLog.sleep!.hoursSlept || 0),
+                quality: Number(incomingLog.sleep!.quality || 4),
+                wakeUpCount: Number(incomingLog.sleep!.wakeUpCount || 0),
+                observations: String(incomingLog.sleep!.observations || '').trim(),
+              },
+              seizures: {
+                occurred: Boolean(incomingLog.seizures!.occurred),
+                morningCount: Number(incomingLog.seizures!.morningCount || 0),
+                afternoonCount: Number(incomingLog.seizures!.afternoonCount || 0),
+                nightCount: Number(incomingLog.seizures!.nightCount || 0),
+                morningDetails: incomingLog.seizures!.morningDetails || { light: 0, medium: 0, strong: 0 },
+                afternoonDetails: incomingLog.seizures!.afternoonDetails || { light: 0, medium: 0, strong: 0 },
+                nightDetails: incomingLog.seizures!.nightDetails || { light: 0, medium: 0, strong: 0 },
+                totalCount: Number(incomingLog.seizures!.totalCount || 0),
+                triggers: String(incomingLog.seizures!.triggers || '').trim(),
+                observations: String(incomingLog.seizures!.observations || '').trim(),
+              },
+              medication: {
+                taken: Boolean(incomingLog.medication!.taken),
+                observations: String(incomingLog.medication!.observations || '').trim(),
+              },
+              createdAt: localExisting ? Timestamp.fromDate(new Date(localExisting.createdAt)) : serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            };
 
-        const pathForBatchWrite = `users/${user.uid}/logs/${logId}`;
-        try {
-          await setDoc(docRef, payload);
-        } catch (err) {
-          handleFirestoreError(err, OperationType.WRITE, pathForBatchWrite);
+            batch.set(docRef, payload);
+          }
+
+          await batch.commit();
         }
+      } catch (err) {
+        const pathForBatchWrite = `users/${user.uid}/logs/batch-sync`;
+        handleFirestoreError(err, OperationType.WRITE, pathForBatchWrite);
+        throw err;
       }
       setShowImporter(false);
     }
