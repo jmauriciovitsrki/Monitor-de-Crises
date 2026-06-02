@@ -27,23 +27,48 @@ export default function ReportDashboard({ logs, childName = "Criança" }: Report
     return new Date().toISOString().split('T')[0];
   });
 
+  // Selected specific Month and Year for 'month' or 'year' periods
+  const [selectedMonth, setSelectedMonth] = useState<number>(() => new Date().getMonth());
+  const [selectedYear, setSelectedYear] = useState<number>(() => new Date().getFullYear());
+
+  // Dynamically compile available years present across all clinical logs list
+  const availableYears = useMemo(() => {
+    const yearsSet = new Set<number>();
+    yearsSet.add(new Date().getFullYear());
+    yearsSet.add(new Date().getFullYear() - 1);
+    yearsSet.add(2024);
+    yearsSet.add(2025);
+    yearsSet.add(2026);
+    yearsSet.add(2027);
+    yearsSet.add(2028);
+
+    logs.forEach(log => {
+      const match = log.date.match(/^(\d{4})/);
+      if (match) {
+        yearsSet.add(parseInt(match[1], 10));
+      }
+    });
+    return Array.from(yearsSet).sort((a, b) => b - a);
+  }, [logs]);
+
   // Filter logs by selected date period
   const filteredLogs = useMemo(() => {
     const sortedLogs = [...logs].sort((a, b) => a.date.localeCompare(b.date));
     if (sortedLogs.length === 0) return [];
 
-    const now = new Date();
-    let limitDate = new Date();
-
     if (period === 'week') {
+      const now = new Date();
+      const limitDate = new Date();
       limitDate.setDate(now.getDate() - 7);
       return sortedLogs.filter(log => new Date(log.date + 'T12:00:00') >= limitDate);
     } else if (period === 'month') {
-      limitDate.setDate(now.getDate() - 30);
-      return sortedLogs.filter(log => new Date(log.date + 'T12:00:00') >= limitDate);
+      // Filter by selected specific month & year: prefix matches 'YYYY-MM'
+      const prefix = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`;
+      return sortedLogs.filter(log => log.date.startsWith(prefix));
     } else if (period === 'year') {
-      limitDate.setFullYear(now.getFullYear() - 1);
-      return sortedLogs.filter(log => new Date(log.date + 'T12:00:00') >= limitDate);
+      // Filter by selected specific year: prefix matches 'YYYY-'
+      const prefix = `${selectedYear}-`;
+      return sortedLogs.filter(log => log.date.startsWith(prefix));
     } else {
       // Custom date range
       const start = startDateStr ? new Date(startDateStr + 'T00:00:00') : new Date(0);
@@ -53,7 +78,7 @@ export default function ReportDashboard({ logs, childName = "Criança" }: Report
         return logDate >= start && logDate <= end;
       });
     }
-  }, [logs, period, startDateStr, endDateStr]);
+  }, [logs, period, startDateStr, endDateStr, selectedMonth, selectedYear]);
 
   // Calculations for reports kpi summaries
   const stats = useMemo(() => {
@@ -164,9 +189,13 @@ export default function ReportDashboard({ logs, childName = "Criança" }: Report
     if (period === 'week') {
       baseText = "Últimos 7 dias";
     } else if (period === 'month') {
-      baseText = "Últimos 30 dias";
+      const monthsStr = [
+        "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+        "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+      ];
+      baseText = `Mensal: ${monthsStr[selectedMonth]} de ${selectedYear}`;
     } else if (period === 'year') {
-      baseText = "Últimos 365 dias";
+      baseText = `Anual: Ano de ${selectedYear}`;
     } else if (period === 'custom') {
       if (startDateStr && endDateStr) {
         if (startDateStr === endDateStr) {
@@ -180,7 +209,7 @@ export default function ReportDashboard({ logs, childName = "Criança" }: Report
     }
 
     if (filteredLogs.length === 0) {
-      return `${baseText} (Não há registros salvos nesta data)`;
+      return `${baseText} (Sem registros para este período)`;
     }
     
     return baseText;
@@ -248,9 +277,60 @@ export default function ReportDashboard({ logs, childName = "Criança" }: Report
         </div>
       </div>
 
+      {/* Selector for specific month and year */}
+      {period === 'month' && (
+        <div className="bg-slate-100 p-4 rounded-2xl flex flex-wrap gap-4 items-center no-print" id="month-report-selectors">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-extrabold text-slate-500 uppercase">Selecionar Mês:</span>
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(Number(e.target.value))}
+              className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700 outline-none focus:border-rose-400 cursor-pointer shadow-2xs"
+            >
+              {[
+                "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+                "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+              ].map((mName, idx) => (
+                <option key={idx} value={idx}>{mName}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-extrabold text-slate-500 uppercase">Selecionar Ano:</span>
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(Number(e.target.value))}
+              className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700 outline-none focus:border-rose-400 cursor-pointer shadow-2xs"
+            >
+              {availableYears.map(yr => (
+                <option key={yr} value={yr}>{yr}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+
+      {/* Selector for specific year */}
+      {period === 'year' && (
+        <div className="bg-slate-100 p-4 rounded-2xl flex flex-wrap gap-4 items-center no-print" id="year-report-selectors">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-extrabold text-slate-500 uppercase">Selecionar Ano:</span>
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(Number(e.target.value))}
+              className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700 outline-none focus:border-rose-400 cursor-pointer shadow-2xs"
+            >
+              {availableYears.map(yr => (
+                <option key={yr} value={yr}>{yr}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+
       {/* Date picker for custom dates */}
       {period === 'custom' && (
-        <div className="bg-slate-100 p-4 rounded-2xl flex flex-wrap gap-4 items-center no-print">
+        <div className="bg-slate-100 p-4 rounded-2xl flex flex-wrap gap-4 items-center no-print" id="custom-report-selectors">
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold text-slate-500 uppercase">Período de:</span>
             <input

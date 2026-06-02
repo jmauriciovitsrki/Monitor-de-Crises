@@ -13,8 +13,10 @@ import RecordHistory from './components/RecordHistory';
 
 import { 
   Heart, Calendar, FileSpreadsheet, BarChart3, LogOut, CheckSquare, RefreshCw, 
-  Settings2, Smartphone, ShieldCheck, Info
+  Settings2, Smartphone, ShieldCheck, Info, Download, Upload, Cloud, CloudOff, Database
 } from 'lucide-react';
+import { signInWithPopup } from 'firebase/auth';
+import { googleProvider } from './firebase';
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
@@ -22,6 +24,8 @@ export default function App() {
   const [isLocalDemo, setIsLocalDemo] = useState(false);
   const [logs, setLogs] = useState<DailyLog[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
+  const [isLinkingCloud, setIsLinkingCloud] = useState(false);
 
   // Modals / workflows triggers
   const [showForm, setShowForm] = useState(false);
@@ -353,6 +357,229 @@ export default function App() {
     await signOut(auth);
   };
 
+  const handleForceSaveToCloud = async () => {
+    if (!user) {
+      alert("Você está no Modo Sem Nuvem (Offline). Faça login para poder salvar registros na nuvem!");
+      return;
+    }
+    setSyncStatus('syncing');
+    try {
+      const chunkSize = 400;
+      for (let i = 0; i < logs.length; i += chunkSize) {
+        const chunk = logs.slice(i, i + chunkSize);
+        const batch = writeBatch(db);
+        
+        for (const log of chunk) {
+          const logId = log.date;
+          const docRef = doc(db, 'users', user.uid, 'logs', logId);
+          
+          const payload = {
+            userId: user.uid,
+            date: log.date,
+            sleep: {
+              status: log.sleep.status,
+              sleepTime: log.sleep.sleepTime || '21:00',
+              wakeTime: log.sleep.wakeTime || '07:00',
+              hoursSlept: Number(log.sleep.hoursSlept || 0),
+              quality: Number(log.sleep.quality || 4),
+              wakeUpCount: Number(log.sleep.wakeUpCount || 0),
+              observations: String(log.sleep.observations || '').trim(),
+            },
+            seizures: {
+              occurred: Boolean(log.seizures.occurred),
+              morningCount: Number(log.seizures.morningCount || 0),
+              afternoonCount: Number(log.seizures.afternoonCount || 0),
+              nightCount: Number(log.seizures.nightCount || 0),
+              morningDetails: log.seizures.morningDetails || { light: 0, medium: 0, strong: 0 },
+              afternoonDetails: log.seizures.afternoonDetails || { light: 0, medium: 0, strong: 0 },
+              nightDetails: log.seizures.nightDetails || { light: 0, medium: 0, strong: 0 },
+              totalCount: Number(log.seizures.totalCount || 0),
+              triggers: String(log.seizures.triggers || '').trim(),
+              observations: String(log.seizures.observations || '').trim(),
+            },
+            medication: {
+              taken: Boolean(log.medication.taken),
+              observations: String(log.medication.observations || '').trim(),
+            },
+            createdAt: log.createdAt ? Timestamp.fromDate(new Date(log.createdAt)) : serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          };
+          batch.set(docRef, payload);
+        }
+        await batch.commit();
+      }
+      setSyncStatus('success');
+      alert(`Dados sincronizados com sucesso no Firestore na Nuvem! Todos os ${logs.length} registros foram salvos.`);
+      setTimeout(() => setSyncStatus('idle'), 4000);
+    } catch (err: any) {
+      console.error(err);
+      setSyncStatus('error');
+      alert("Erro ao forçar gravação no Firestore: " + err.message);
+    }
+  };
+
+  const handleLoginAndSync = async () => {
+    setIsLinkingCloud(true);
+    setSyncStatus('syncing');
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const currentUser = result.user;
+      if (currentUser) {
+        setUser(currentUser);
+        setIsLocalDemo(false);
+        localStorage.removeItem('wasInDemo');
+
+        // Check for offline backups to sync up
+        const stored = localStorage.getItem('offlinelogs');
+        if (stored) {
+          const parsedLogs = JSON.parse(stored);
+          if (Array.isArray(parsedLogs) && parsedLogs.length > 0) {
+            const chunkSize = 400;
+            for (let i = 0; i < parsedLogs.length; i += chunkSize) {
+              const chunk = parsedLogs.slice(i, i + chunkSize);
+              const batch = writeBatch(db);
+              
+              for (const incomingLog of chunk) {
+                const logId = incomingLog.date!;
+                const docRef = doc(db, 'users', currentUser.uid, 'logs', logId);
+                
+                const payload = {
+                  userId: currentUser.uid,
+                  date: incomingLog.date!,
+                  sleep: {
+                    status: incomingLog.sleep!.status,
+                    sleepTime: incomingLog.sleep!.sleepTime || '21:00',
+                    wakeTime: incomingLog.sleep!.wakeTime || '07:00',
+                    hoursSlept: Number(incomingLog.sleep!.hoursSlept || 0),
+                    quality: Number(incomingLog.sleep!.quality || 4),
+                    wakeUpCount: Number(incomingLog.sleep!.wakeUpCount || 0),
+                    observations: String(incomingLog.sleep!.observations || '').trim(),
+                  },
+                  seizures: {
+                    occurred: Boolean(incomingLog.seizures!.occurred),
+                    morningCount: Number(incomingLog.seizures!.morningCount || 0),
+                    afternoonCount: Number(incomingLog.seizures!.afternoonCount || 0),
+                    nightCount: Number(incomingLog.seizures!.nightCount || 0),
+                    morningDetails: incomingLog.seizures!.morningDetails || { light: 0, medium: 0, strong: 0 },
+                    afternoonDetails: incomingLog.seizures!.afternoonDetails || { light: 0, medium: 0, strong: 0 },
+                    nightDetails: incomingLog.seizures!.nightDetails || { light: 0, medium: 0, strong: 0 },
+                    totalCount: Number(incomingLog.seizures!.totalCount || 0),
+                    triggers: String(incomingLog.seizures!.triggers || '').trim(),
+                    observations: String(incomingLog.seizures!.observations || '').trim(),
+                  },
+                  medication: {
+                    taken: Boolean(incomingLog.medication!.taken),
+                    observations: String(incomingLog.medication!.observations || '').trim(),
+                  },
+                  createdAt: serverTimestamp(),
+                  updatedAt: serverTimestamp(),
+                };
+                
+                batch.set(docRef, payload);
+              }
+              await batch.commit();
+            }
+            alert(`Login realizado com sucesso! Todos os seus ${parsedLogs.length} logs criados em modo offline foram sincronizados e gravados na nuvem do seu Firestore!`);
+            localStorage.removeItem('offlinelogs');
+          } else {
+            alert('Conta do Google conectada com sucesso! Seus dados agora serão sincronizados e salvos automaticamente na Nuvem.');
+          }
+        } else {
+          alert('Conta do Google conectada com sucesso! Seus dados agora serão sincronizados e salvos automaticamente na Nuvem.');
+        }
+      }
+      setSyncStatus('success');
+      setTimeout(() => setSyncStatus('idle'), 4000);
+    } catch (err: any) {
+      console.error(err);
+      setSyncStatus('error');
+      alert("Falha ao autenticar com o Google ou sincronizar dados: " + err.message);
+    } finally {
+      setIsLinkingCloud(false);
+    }
+  };
+
+  const handleExportBackup = () => {
+    try {
+      if (!logs || logs.length === 0) {
+        alert('Não há registros diários disponíveis no momento para gerar backup.');
+        return;
+      }
+      const dataStr = JSON.stringify(logs, null, 2);
+      const blob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `backup_diario_epilepsia_${childName.toLowerCase().replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('Erro ao exportar backup: ' + err);
+    }
+  };
+
+  const handleImportBackup = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const content = e.target?.result as string;
+        const parsed = JSON.parse(content);
+        
+        if (!Array.isArray(parsed)) {
+          throw new Error('O arquivo de backup deve conter uma lista de registros-diários válidos no formato JSON.');
+        }
+
+        // Validate basic structure of the backup items
+        const validatedLogsObj: Partial<DailyLog>[] = parsed.map((item, idx) => {
+          if (!item.date) {
+            throw new Error(`O registro de índice ${idx} não possui uma data válida.`);
+          }
+          return {
+            date: item.date,
+            sleep: item.sleep || {
+              status: 'dormiu',
+              sleepTime: '21:00',
+              wakeTime: '07:00',
+              hoursSlept: 8,
+              quality: 4,
+              wakeUpCount: 0,
+              observations: '',
+            },
+            seizures: item.seizures || {
+              occurred: false,
+              morningCount: 0,
+              afternoonCount: 0,
+              nightCount: 0,
+              morningDetails: { light: 0, medium: 0, strong: 0 },
+              afternoonDetails: { light: 0, medium: 0, strong: 0 },
+              nightDetails: { light: 0, medium: 0, strong: 0 },
+              totalCount: 0,
+              triggers: '',
+              observations: '',
+            },
+            medication: item.medication || {
+              taken: true,
+              observations: '',
+            }
+          };
+        });
+
+        // Trigger batch import
+        await handleBatchImport(validatedLogsObj);
+        alert(`Backup restaurado com sucesso! ${validatedLogsObj.length} registros foram importados e salvos.`);
+      } catch (err: any) {
+        alert('Erro ao restaurar backup: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
+  };
+
   if (authLoading) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
@@ -370,6 +597,16 @@ export default function App() {
     <div className="min-h-screen bg-slate-50 text-slate-700 flex flex-col" id="app-container">
       
       {/* Dynamic system alerts on top */}
+      {window.self !== window.top && (
+        <div className="bg-indigo-600 text-white px-4 py-3 text-center text-xs font-semibold flex items-center justify-center gap-2 border-b border-indigo-700 shadow-sm" id="iframe-storage-warning">
+          <Info className="h-4 w-4 text-indigo-100 flex-shrink-0 animate-bounce" />
+          <span className="max-w-4xl">
+            ⚠️ <strong>Atenção:</strong> Você está no visualizador do AI Studio. 
+            Para evitar que seus dados locais sumam ao recarregar a página (F5) ou que o Login do Google seja bloqueado, clique em <strong>"Open in a new tab" (Abrir em nova aba)</strong> no canto superior direito!
+          </span>
+        </div>
+      )}
+
       {isLocalDemo && (
         <div className="bg-amber-500 text-white px-4 py-2 text-center text-xs font-bold flex items-center justify-center gap-2" id="demo-mode-alert">
           <Info className="h-4 w-4" />
@@ -448,6 +685,65 @@ export default function App() {
       {/* Main Body */}
       <main className="max-w-6xl mx-auto w-full p-4 sm:p-6 flex-1 space-y-6">
         
+        {/* Central de Sincronização e Salvamento na Nuvem */}
+        <div id="cloud-sync-control-center">
+          {user ? (
+            <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 shadow-2xs">
+              <div className="flex items-start sm:items-center gap-3">
+                <div className="bg-emerald-500 text-white p-2 rounded-xl">
+                  <Cloud className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-xs text-emerald-950 uppercase tracking-wider block">Salvamento Clínico Seguro</h3>
+                  <p className="text-slate-600 text-xs mt-0.5 leading-relaxed font-semibold">
+                    Seus dados estão sendo salvos em tempo real no banco oficial <strong className="text-emerald-800">Firestore na Nuvem</strong> ({user.email}).
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 w-full md:w-auto shrink-0 justify-end">
+                <button
+                  type="button"
+                  id="btn-force-cloud-sync"
+                  onClick={handleForceSaveToCloud}
+                  disabled={syncStatus === 'syncing'}
+                  className="w-full md:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white font-extrabold text-xs rounded-xl shadow-xs transition select-none cursor-pointer hover:scale-[1.01]"
+                  title="Força a regravação em lote de todos os registros atuais para garantir que estão seguros no seu Firestore"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
+                  {syncStatus === 'syncing' ? 'Salvando...' : 'Salvar Agora no Firestore'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-amber-100/70 border border-amber-200 p-4 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 shadow-2xs">
+              <div className="flex items-start sm:items-center gap-3">
+                <div className="bg-amber-500 text-white p-2 rounded-xl">
+                  <CloudOff className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-xs text-amber-950 uppercase tracking-wider block">Armazenamento Offline Provisório</h3>
+                  <p className="text-slate-600 text-[11px] sm:text-xs mt-0.5 leading-relaxed font-bold">
+                    ⚠️ Seus dados e planilhas importadas estão guardados <span className="text-amber-800 font-extrabold">apenas localmente</span> e vão sumir ao fechar ou recarregar esta página (F5) devido ao iframe do AI Studio.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 w-full md:w-auto shrink-0 justify-end">
+                <button
+                  type="button"
+                  id="btn-login-and-sync"
+                  onClick={handleLoginAndSync}
+                  disabled={isLinkingCloud}
+                  className="w-full md:w-auto flex items-center justify-center gap-2 px-5 py-2.5 bg-rose-500 hover:bg-rose-600 disabled:bg-rose-300 text-white font-extrabold text-xs rounded-xl shadow-md transition select-none cursor-pointer"
+                  title="Conectar sua conta do Google e salvar todos os diários criados no banco de dados na nuvem"
+                >
+                  <Cloud className="h-4 w-4" />
+                  {isLinkingCloud ? 'Sincronizando...' : 'Conectar e Salvar na Nuvem'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+        
         {/* Actions bar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           
@@ -489,6 +785,33 @@ export default function App() {
               <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
               Importar Planilha
             </button>
+
+            <button
+              id="btn-export-backup"
+              onClick={handleExportBackup}
+              title="Salvar cópia de segurança de todos os registros em arquivo JSON para guardar no seu computador"
+              className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-xl shadow-xs transition select-none cursor-pointer"
+            >
+              <Download className="h-4 w-4 text-blue-600" />
+              Salvar Backup JSON
+            </button>
+
+            <button
+              id="btn-import-backup"
+              onClick={() => document.getElementById('input-backup-file')?.click()}
+              title="Restaurar registros salvos anteriormente a partir de um arquivo de backup JSON"
+              className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-xl shadow-xs transition select-none cursor-pointer"
+            >
+              <Upload className="h-4 w-4 text-indigo-600" />
+              Restaurar Backup JSON
+            </button>
+            <input
+              type="file"
+              id="input-backup-file"
+              accept=".json"
+              onChange={handleImportBackup}
+              className="hidden"
+            />
 
             <button
               id="btn-add-today"
