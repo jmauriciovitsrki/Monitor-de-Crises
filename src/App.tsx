@@ -499,86 +499,7 @@ export default function App() {
     }
   };
 
-  const handleExportBackup = () => {
-    try {
-      if (!logs || logs.length === 0) {
-        alert('Não há registros diários disponíveis no momento para gerar backup.');
-        return;
-      }
-      const dataStr = JSON.stringify(logs, null, 2);
-      const blob = new Blob([dataStr], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `backup_diario_epilepsia_${childName.toLowerCase().replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.json`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      alert('Erro ao exportar backup: ' + err);
-    }
-  };
 
-  const handleImportBackup = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const content = e.target?.result as string;
-        const parsed = JSON.parse(content);
-        
-        if (!Array.isArray(parsed)) {
-          throw new Error('O arquivo de backup deve conter uma lista de registros-diários válidos no formato JSON.');
-        }
-
-        // Validate basic structure of the backup items
-        const validatedLogsObj: Partial<DailyLog>[] = parsed.map((item, idx) => {
-          if (!item.date) {
-            throw new Error(`O registro de índice ${idx} não possui uma data válida.`);
-          }
-          return {
-            date: item.date,
-            sleep: item.sleep || {
-              status: 'dormiu',
-              sleepTime: '21:00',
-              wakeTime: '07:00',
-              hoursSlept: 8,
-              quality: 4,
-              wakeUpCount: 0,
-              observations: '',
-            },
-            seizures: item.seizures || {
-              occurred: false,
-              morningCount: 0,
-              afternoonCount: 0,
-              nightCount: 0,
-              morningDetails: { light: 0, medium: 0, strong: 0 },
-              afternoonDetails: { light: 0, medium: 0, strong: 0 },
-              nightDetails: { light: 0, medium: 0, strong: 0 },
-              totalCount: 0,
-              triggers: '',
-              observations: '',
-            },
-            medication: item.medication || {
-              taken: true,
-              observations: '',
-            }
-          };
-        });
-
-        // Trigger batch import
-        await handleBatchImport(validatedLogsObj);
-        alert(`Backup restaurado com sucesso! ${validatedLogsObj.length} registros foram importados e salvos.`);
-      } catch (err: any) {
-        alert('Erro ao restaurar backup: ' + err.message);
-      }
-    };
-    reader.readAsText(file);
-    event.target.value = '';
-  };
 
   if (authLoading) {
     return (
@@ -686,35 +607,8 @@ export default function App() {
       <main className="max-w-6xl mx-auto w-full p-4 sm:p-6 flex-1 space-y-6">
         
         {/* Central de Sincronização e Salvamento na Nuvem */}
-        <div id="cloud-sync-control-center">
-          {user ? (
-            <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 shadow-2xs">
-              <div className="flex items-start sm:items-center gap-3">
-                <div className="bg-emerald-500 text-white p-2 rounded-xl">
-                  <Cloud className="h-5 w-5" />
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-xs text-emerald-950 uppercase tracking-wider block">Salvamento Clínico Seguro</h3>
-                  <p className="text-slate-600 text-xs mt-0.5 leading-relaxed font-semibold">
-                    Seus dados estão sendo salvos em tempo real no banco oficial <strong className="text-emerald-800">Firestore na Nuvem</strong> ({user.email}).
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 w-full md:w-auto shrink-0 justify-end">
-                <button
-                  type="button"
-                  id="btn-force-cloud-sync"
-                  onClick={handleForceSaveToCloud}
-                  disabled={syncStatus === 'syncing'}
-                  className="w-full md:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white font-extrabold text-xs rounded-xl shadow-xs transition select-none cursor-pointer hover:scale-[1.01]"
-                  title="Força a regravação em lote de todos os registros atuais para garantir que estão seguros no seu Firestore"
-                >
-                  <RefreshCw className={`h-3.5 w-3.5 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
-                  {syncStatus === 'syncing' ? 'Salvando...' : 'Salvar Agora no Firestore'}
-                </button>
-              </div>
-            </div>
-          ) : (
+        {!user && (
+          <div id="cloud-sync-control-center">
             <div className="bg-amber-100/70 border border-amber-200 p-4 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 shadow-2xs">
               <div className="flex items-start sm:items-center gap-3">
                 <div className="bg-amber-500 text-white p-2 rounded-xl">
@@ -741,8 +635,8 @@ export default function App() {
                 </button>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
         
         {/* Actions bar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -785,33 +679,6 @@ export default function App() {
               <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
               Importar Planilha
             </button>
-
-            <button
-              id="btn-export-backup"
-              onClick={handleExportBackup}
-              title="Salvar cópia de segurança de todos os registros em arquivo JSON para guardar no seu computador"
-              className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-xl shadow-xs transition select-none cursor-pointer"
-            >
-              <Download className="h-4 w-4 text-blue-600" />
-              Salvar Backup JSON
-            </button>
-
-            <button
-              id="btn-import-backup"
-              onClick={() => document.getElementById('input-backup-file')?.click()}
-              title="Restaurar registros salvos anteriormente a partir de um arquivo de backup JSON"
-              className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-xl shadow-xs transition select-none cursor-pointer"
-            >
-              <Upload className="h-4 w-4 text-indigo-600" />
-              Restaurar Backup JSON
-            </button>
-            <input
-              type="file"
-              id="input-backup-file"
-              accept=".json"
-              onChange={handleImportBackup}
-              className="hidden"
-            />
 
             <button
               id="btn-add-today"
@@ -873,16 +740,8 @@ export default function App() {
         />
       )}
 
-      {/* Footer Info credit */}
-      <footer className="bg-white border-t border-slate-100 py-6 text-center text-xs text-slate-400 space-y-2 mt-auto" id="app-footer">
-        <div className="flex justify-center items-center gap-1.5 text-slate-500 font-semibold uppercase text-[10px] tracking-widest leading-none">
-          <ShieldCheck className="h-4 w-4 text-emerald-500" />
-          Nível de segurança militar ativado
-        </div>
-        <p className="max-w-md mx-auto text-[11px] leading-relaxed px-4">
-          Desenvolvido com todo o cuidado para facilitar a rotina de pais e profissionais médicos. Todas as informações contidas são de uso terapêutico pessoal.
-        </p>
-      </footer>
+      {/* Footer minimal padding */}
+      <div className="py-4 mt-auto" />
 
     </div>
   );
