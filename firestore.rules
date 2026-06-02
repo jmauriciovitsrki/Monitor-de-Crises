@@ -7,6 +7,11 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Connection check route permitted for status health verify
+    match /test/connection {
+      allow read: if true;
+    }
+
     // Primitive Helpers
     function isSignedIn() {
       return request.auth != null;

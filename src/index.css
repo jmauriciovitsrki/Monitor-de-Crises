@@ -21,7 +21,7 @@ h1, h2, h3, h4 {
     color: black !important;
   }
   
-  #nav-header, #app-footer, #importer-modal, #daily-form-modal, #demo-mode-alert, #btn-print-report, .flex-wrap, button {
+  #nav-header, #app-footer, #importer-modal, #daily-form-modal, #demo-mode-alert, #btn-print-report, button, .no-print {
     display: none !important;
   }
   

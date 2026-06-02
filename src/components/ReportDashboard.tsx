@@ -10,11 +10,12 @@ import {
 
 interface ReportDashboardProps {
   logs: DailyLog[];
+  childName?: string;
 }
 
 type PeriodType = 'week' | 'month' | 'year' | 'custom';
 
-export default function ReportDashboard({ logs }: ReportDashboardProps) {
+export default function ReportDashboard({ logs, childName = "Criança" }: ReportDashboardProps) {
   const [period, setPeriod] = useState<PeriodType>('month');
   const [startDateStr, setStartDateStr] = useState<string>(() => {
     // 30 days ago default
@@ -159,21 +160,51 @@ export default function ReportDashboard({ logs }: ReportDashboardProps) {
   };
 
   const getPeriodRangeText = () => {
-    if (filteredLogs.length === 0) {
-      if (period === 'custom' && startDateStr && endDateStr) {
-        return `Período selecionado: ${formatLocalDateStr(startDateStr)} até ${formatLocalDateStr(endDateStr)} (Nenhum registro encontrado)`;
+    let baseText = "";
+    if (period === 'week') {
+      baseText = "Últimos 7 dias";
+    } else if (period === 'month') {
+      baseText = "Últimos 30 dias";
+    } else if (period === 'year') {
+      baseText = "Últimos 365 dias";
+    } else if (period === 'custom') {
+      if (startDateStr && endDateStr) {
+        if (startDateStr === endDateStr) {
+          baseText = `Dia específico: ${formatLocalDateStr(startDateStr)}`;
+        } else {
+          baseText = `Período: ${formatLocalDateStr(startDateStr)} até ${formatLocalDateStr(endDateStr)}`;
+        }
+      } else {
+        baseText = "Período personalizado";
       }
-      return 'Nenhum registro no período';
     }
-    const firstDate = filteredLogs[0].date;
-    const lastDate = filteredLogs[filteredLogs.length - 1].date;
-    return `Período do Relatório: ${formatLocalDateStr(firstDate)} até ${formatLocalDateStr(lastDate)}`;
+
+    if (filteredLogs.length === 0) {
+      return `${baseText} (Não há registros salvos nesta data)`;
+    }
+    
+    return baseText;
   };
 
   return (
     <div className="space-y-6" id="reports-dashboard">
+      {/* Cabeçalho exclusivo para Impressão Médica (oculto no app principal com no-print) */}
+      <div className="hidden print:block bg-white border-b border-slate-200 pb-5 mb-4 font-sans">
+        <div className="flex justify-between items-start">
+          <div>
+            <h1 className="text-2xl font-extrabold text-slate-900 leading-tight">Monitor de Crises e Sono</h1>
+            <p className="text-xs text-slate-500 font-medium mt-1">Histórico Clínico Detalhado para o Neurologista Pediátrico</p>
+          </div>
+          <div className="text-right text-xs text-slate-700 space-y-1">
+            <p className="font-bold text-slate-800 text-sm"><span className="text-slate-400 font-normal">Criança/Paciente:</span> {childName}</p>
+            <p className="font-semibold text-rose-500"><span className="text-slate-400 font-normal">Período:</span> {getPeriodRangeText()}</p>
+            <p className="text-[10px] text-slate-400 mt-1"><span className="text-slate-400 font-normal">Emitido em:</span> {new Date().toLocaleDateString('pt-BR')}</p>
+          </div>
+        </div>
+      </div>
+
       {/* Search selection top panel */}
-      <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4 no-print">
         <div>
           <h2 className="text-xl font-extrabold text-slate-800">Relatórios e Estatísticas</h2>
           <p className="text-xs text-slate-400 mb-1.5 font-medium text-slate-400">Analise tendências, hábitos e correlacione desvios no sono ou medicamentos</p>
@@ -219,7 +250,7 @@ export default function ReportDashboard({ logs }: ReportDashboardProps) {
 
       {/* Date picker for custom dates */}
       {period === 'custom' && (
-        <div className="bg-slate-100 p-4 rounded-2xl flex flex-wrap gap-4 items-center">
+        <div className="bg-slate-100 p-4 rounded-2xl flex flex-wrap gap-4 items-center no-print">
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold text-slate-500 uppercase">Período de:</span>
             <input

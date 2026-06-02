@@ -523,7 +523,7 @@ export default function App() {
                 onDelete={handleDeleteLog}
               />
             ) : (
-              <ReportDashboard logs={logs} />
+              <ReportDashboard logs={logs} childName={childName} />
             )}
           </div>
         )}
