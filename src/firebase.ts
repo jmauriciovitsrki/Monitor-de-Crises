@@ -1,11 +1,9 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfigJson from './firebase-applet-config.json';
 
-// Suporte a variáveis de ambiente do Vite de forma segura, com fallback para o JSON do AI Studio
 const metaEnv = (import.meta as any).env || {};
-
 const firebaseConfig = {
   projectId: metaEnv.VITE_FIREBASE_PROJECT_ID || firebaseConfigJson.projectId,
   appId: metaEnv.VITE_FIREBASE_APP_ID || firebaseConfigJson.appId,
@@ -18,12 +16,16 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-
-// Initialize Firestore with Database ID from configuration
-export const db = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== '(default)'
-  ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
-  : getFirestore(app);
 export const auth = getAuth(app);
+
+// ← LINHA QUE FALTAVA: mantém o login salvo no navegador
+setPersistence(auth, browserLocalPersistence).catch((err) => {
+  console.error("Error setting persistence:", err);
+});
+
+// ← SIMPLIFICADO igual ao GestorPro
+export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+
 export const googleProvider = new GoogleAuthProvider();
 
 export enum OperationType {
@@ -69,24 +71,20 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     operationType,
     path
   };
-  
   console.error('Firestore Error Details: ', JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
 }
 
-// Check if using placeholder credentials
 export function isPlaceholderConfig() {
   return firebaseConfig.apiKey === 'ai-studio-placeholder' || !firebaseConfig.apiKey;
 }
 
-// Test Connection function as required by the Firebase Integration Skill guidelines
 export async function testConnection() {
   if (isPlaceholderConfig()) {
-    console.warn('Firebase is configured with placeholder parameters. Please link Firebase in the AI Studio platform Integration tab.');
+    console.warn('Firebase configurado com parâmetros placeholder.');
     return;
   }
   try {
-    // Tests connectivity directly from the server to check permissions or offline conditions
     await getDocFromServer(doc(db, 'test', 'connection'));
   } catch (error) {
     if (error instanceof Error && error.message.includes('the client is offline')) {
