@@ -30,6 +30,224 @@ interface ColumnMapping {
   medicationObs: string;
 }
 
+const normalizeString = (str: string): string => {
+  return str
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+};
+
+const cleanDate = (val: any): string | null => {
+  if (val === null || val === undefined) return null;
+  if (val instanceof Date) {
+    if (isNaN(val.getTime())) return null;
+    const y = val.getFullYear();
+    const m = String(val.getMonth() + 1).padStart(2, '0');
+    const d = String(val.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  const str = String(val).trim();
+  if (!str) return null;
+
+  // Se for número serial do Excel (ex: 45102)
+  const num = Number(str);
+  if (!isNaN(num) && num > 30000 && num < 100000) {
+    const excelEpoch = new Date(1899, 11, 30);
+    const date = new Date(excelEpoch.getTime() + num * 24 * 60 * 60 * 1000);
+    if (!isNaN(date.getTime())) {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+  }
+
+  // Se for no formato DD/MM/AAAA ou DD-MM-AAAA
+  const parts = str.split(/[/\-.]/);
+  if (parts.length === 3) {
+    let d = parts[0].trim();
+    let m = parts[1].trim();
+    let y = parts[2].trim();
+
+    // Se o primeiro segmento tiver tamanho 4, assume que já é AAAA-MM-DD
+    if (d.length === 4) {
+      y = parts[0].trim();
+      m = parts[1].trim();
+      d = parts[2].trim();
+    }
+
+    d = d.padStart(2, '0');
+    m = m.padStart(2, '0');
+
+    if (y.length === 2) {
+      y = parseInt(y, 10) > 50 ? '19' + y : '20' + y;
+    }
+
+    if (y.length === 4 && d.length === 2 && m.length === 2) {
+      const yearNum = parseInt(y, 10);
+      const monthNum = parseInt(m, 10) - 1;
+      const dayNum = parseInt(d, 10);
+      const test = new Date(yearNum, monthNum, dayNum);
+      if (test.getFullYear() === yearNum && test.getMonth() === monthNum && test.getDate() === dayNum) {
+        return `${y}-${m}-${d}`;
+      }
+    }
+  }
+
+  // Fallback padrão Date parse do JS
+  const parsedDate = new Date(str);
+  if (!isNaN(parsedDate.getTime())) {
+    const y = parsedDate.getFullYear();
+    const m = String(parsedDate.getMonth() + 1).padStart(2, '0');
+    const d = String(parsedDate.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  return null;
+};
+
+const cleanTime = (val: any, defaultTime: string): string => {
+  if (val === null || val === undefined) return defaultTime;
+
+  const num = Number(val);
+  if (!isNaN(num) && num >= 0 && num <= 1) {
+    const totalMinutes = Math.round(num * 24 * 60);
+    const h = Math.floor(totalMinutes / 60);
+    const m = totalMinutes % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  }
+
+  const str = String(val).trim().toUpperCase();
+  if (!str) return defaultTime;
+
+  let cleaned = str
+    .replace(/[Hh]/g, ':')
+    .replace(/[Mm]/g, '')
+    .replace(/[^0-9:AMP\s.]/g, '')
+    .trim();
+
+  const isPM = cleaned.includes('PM');
+  const isAM = cleaned.includes('AM');
+  cleaned = cleaned.replace(/AM|PM/g, '').trim();
+
+  if (!cleaned.includes(':') && cleaned.includes('.')) {
+    cleaned = cleaned.replace('.', ':');
+  }
+
+  if (!cleaned.includes(':')) {
+    if (cleaned.length === 1 || cleaned.length === 2) {
+      cleaned = cleaned.padStart(2, '0') + ':00';
+    } else if (cleaned.length === 3) {
+      cleaned = '0' + cleaned.substring(0, 1) + ':' + cleaned.substring(1);
+    } else if (cleaned.length === 4) {
+      cleaned = cleaned.substring(0, 2) + ':' + cleaned.substring(2);
+    }
+  }
+
+  const parts = cleaned.split(':');
+  if (parts.length >= 2) {
+    let hour = parseInt(parts[0], 10);
+    let min = parseInt(parts[1], 10);
+
+    if (!isNaN(hour) && !isNaN(min)) {
+      if (isPM && hour < 12) hour += 12;
+      if (isAM && hour === 12) hour = 0;
+
+      hour = Math.max(0, Math.min(23, hour));
+      min = Math.max(0, Math.min(59, min));
+
+      return `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+    }
+  }
+
+  return defaultTime;
+};
+
+const cleanNumber = (val: any, defaultVal: number): number => {
+  if (val === null || val === undefined) return defaultVal;
+  if (typeof val === 'number') return isNaN(val) ? defaultVal : val;
+
+  const str = String(val).trim();
+  if (!str) return defaultVal;
+
+  const cleaned = str.replace(',', '.');
+  const match = cleaned.match(/-?\d+(\.\d+)?/);
+  if (match) {
+    const num = parseFloat(match[0]);
+    return isNaN(num) ? defaultVal : num;
+  }
+  return defaultVal;
+};
+
+const cleanBoolean = (val: any): boolean => {
+  if (val === null || val === undefined) return false;
+  if (typeof val === 'boolean') return val;
+
+  const str = normalizeString(String(val));
+  const trueTokens = ['sim', 's', 'yes', 'y', 'teve', 'ocorreu', '1', 'true', 'ativo', 'positivo', 'checked'];
+  return trueTokens.some(token => str.includes(token)) || Number(str) > 0;
+};
+
+const autoMatchHeaders = (headers: string[]): ColumnMapping => {
+  const newMapping: ColumnMapping = {
+    date: '',
+    sleepStatus: '',
+    sleepTime: '',
+    wakeTime: '',
+    sleepQuality: '',
+    wakeUpCount: '',
+    sleepObs: '',
+    seizuresOccurred: '',
+    seizureMorning: '',
+    seizureAfternoon: '',
+    seizureNight: '',
+    seizureTriggers: '',
+    seizureObs: '',
+    medicationTaken: '',
+    medicationObs: ''
+  };
+
+  headers.forEach((header) => {
+    const hNorm = normalizeString(header);
+    
+    if (hNorm === 'data' || hNorm.includes('data do') || hNorm.includes('data_res') || hNorm.includes('dia') || hNorm.includes('data (')) {
+      newMapping.date = header;
+    } else if (hNorm.includes('status') || hNorm.includes('dormiu') || hNorm.includes('sono_status')) {
+      newMapping.sleepStatus = header;
+    } else if (hNorm.includes('horario dorm') || hNorm.includes('sono dorm') || hNorm.includes('sleep time') || hNorm.includes('hora_dorm') || hNorm.includes('horario_dorm') || hNorm.includes('dormir')) {
+      newMapping.sleepTime = header;
+    } else if (hNorm.includes('horario acord') || hNorm.includes('sono acord') || hNorm.includes('wake time') || hNorm.includes('hora_acord') || hNorm.includes('horario_acord') || hNorm.includes('acordar') || hNorm.includes('despertar')) {
+      newMapping.wakeTime = header;
+    } else if (hNorm.includes('qualidade') || hNorm.includes('nota') || hNorm.includes('quality') || hNorm.includes('aproveitamento')) {
+      newMapping.sleepQuality = header;
+    } else if (hNorm.includes('vezes') || hNorm.includes('acordou no') || hNorm.includes('awakenings') || hNorm.includes('despertares') || hNorm.includes('acordou')) {
+      newMapping.wakeUpCount = header;
+    } else if (hNorm.includes('obs') && (hNorm.includes('sono') || hNorm.includes('dormir'))) {
+      newMapping.sleepObs = header;
+    } else if (hNorm.includes('teve crise') || hNorm.includes('crise?') || hNorm.includes('ocorreu') || (hNorm.includes('crise') && !hNorm.includes('obs') && !hNorm.includes('gatilho') && !hNorm.includes('manha') && !hNorm.includes('tarde') && !hNorm.includes('noite'))) {
+      newMapping.seizuresOccurred = header;
+    } else if (hNorm.includes('manha') || hNorm.includes('morning')) {
+      newMapping.seizureMorning = header;
+    } else if (hNorm.includes('tarde') || hNorm.includes('afternoon')) {
+      newMapping.seizureAfternoon = header;
+    } else if (hNorm.includes('noite') || hNorm.includes('night') || hNorm.includes('madrugada')) {
+      newMapping.seizureNight = header;
+    } else if (hNorm.includes('gatilho') || hNorm.includes('trigger')) {
+      newMapping.seizureTriggers = header;
+    } else if (hNorm.includes('obs') && (hNorm.includes('crise') || hNorm.includes('convul'))) {
+      newMapping.seizureObs = header;
+    } else if (hNorm.includes('medic') || hNorm.includes('remedio') || hNorm.includes('remedic') || hNorm.includes('medicamento')) {
+      newMapping.medicationTaken = header;
+    } else if (hNorm.includes('obs') && (hNorm.includes('med') || hNorm.includes('remedio'))) {
+      newMapping.medicationObs = header;
+    }
+  });
+
+  return newMapping;
+};
+
 export default function CSVImporter({ onImportComplete, onClose }: CSVImporterProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1); // 1: Select CSV, 2: Map Columns, 3: Review & Upload
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
@@ -128,28 +346,7 @@ export default function CSVImporter({ onImportComplete, onClose }: CSVImporterPr
           setCsvRows(normalizedRows.slice(1));
           
           // Auto-match mapper by content patterns
-          const newMapping = { ...mapping };
-          
-          headers.forEach((header) => {
-            const lower = header.toLowerCase();
-            if (lower.includes('data')) newMapping.date = header;
-            else if (lower.includes('status') || lower.includes('dormiu')) newMapping.sleepStatus = header;
-            else if (lower.includes('horario dorm') || lower.includes('sono dorm') || lower.includes('sleep time')) newMapping.sleepTime = header;
-            else if (lower.includes('horario acord') || lower.includes('sono acord') || lower.includes('wake time')) newMapping.wakeTime = header;
-            else if (lower.includes('qualidade') || lower.includes('nota') || lower.includes('quality')) newMapping.sleepQuality = header;
-            else if (lower.includes('vezes') || lower.includes('acordou no') || lower.includes('awakenings')) newMapping.wakeUpCount = header;
-            else if (lower.includes('obs') && lower.includes('sono')) newMapping.sleepObs = header;
-            else if (lower.includes('teve crise') || lower.includes('crise') || lower.includes('ocorreu')) newMapping.seizuresOccurred = header;
-            else if (lower.includes('manhã') || lower.includes('manha') || lower.includes('morning')) newMapping.seizureMorning = header;
-            else if (lower.includes('tarde') || lower.includes('afternoon')) newMapping.seizureAfternoon = header;
-            else if (lower.includes('noite') || lower.includes('night') || lower.includes('madrugada')) newMapping.seizureNight = header;
-            else if (lower.includes('gatilho')) newMapping.seizureTriggers = header;
-            else if (lower.includes('obs') && (lower.includes('crise') || lower.includes('convul'))) newMapping.seizureObs = header;
-            else if (lower.includes('médic') || lower.includes('medic') || lower.includes('remedio')) newMapping.medicationTaken = header;
-            else if (lower.includes('obs') && lower.includes('med')) newMapping.medicationObs = header;
-          });
-          
-          setMapping(newMapping);
+          setMapping(autoMatchHeaders(headers));
           setStep(2);
         } catch (err: any) {
           setErrorMsg(err.message || 'Falha ao analisar o arquivo Excel. Verifique se o arquivo não está corrompido.');
@@ -173,28 +370,7 @@ export default function CSVImporter({ onImportComplete, onClose }: CSVImporterPr
           setCsvRows(parsed.slice(1));
           
           // Auto-match mapper by content patterns
-          const newMapping = { ...mapping };
-          
-          headers.forEach((header) => {
-            const lower = header.toLowerCase();
-            if (lower.includes('data')) newMapping.date = header;
-            else if (lower.includes('status') || lower.includes('dormiu')) newMapping.sleepStatus = header;
-            else if (lower.includes('horario dorm') || lower.includes('sono dorm') || lower.includes('sleep time')) newMapping.sleepTime = header;
-            else if (lower.includes('horario acord') || lower.includes('sono acord') || lower.includes('wake time')) newMapping.wakeTime = header;
-            else if (lower.includes('qualidade') || lower.includes('nota') || lower.includes('quality')) newMapping.sleepQuality = header;
-            else if (lower.includes('vezes') || lower.includes('acordou no') || lower.includes('awakenings')) newMapping.wakeUpCount = header;
-            else if (lower.includes('obs') && lower.includes('sono')) newMapping.sleepObs = header;
-            else if (lower.includes('teve crise') || lower.includes('crise') || lower.includes('ocorreu')) newMapping.seizuresOccurred = header;
-            else if (lower.includes('manhã') || lower.includes('manha') || lower.includes('morning')) newMapping.seizureMorning = header;
-            else if (lower.includes('tarde') || lower.includes('afternoon')) newMapping.seizureAfternoon = header;
-            else if (lower.includes('noite') || lower.includes('night') || lower.includes('madrugada')) newMapping.seizureNight = header;
-            else if (lower.includes('gatilho')) newMapping.seizureTriggers = header;
-            else if (lower.includes('obs') && (lower.includes('crise') || lower.includes('convul'))) newMapping.seizureObs = header;
-            else if (lower.includes('médic') || lower.includes('medic') || lower.includes('remedio')) newMapping.medicationTaken = header;
-            else if (lower.includes('obs') && lower.includes('med')) newMapping.medicationObs = header;
-          });
-          
-          setMapping(newMapping);
+          setMapping(autoMatchHeaders(headers));
           setStep(2);
         } catch (err: any) {
           setErrorMsg(err.message || 'Falha ao analisar o arquivo. Verifique se é um arquivo CSV válido.');
@@ -237,81 +413,42 @@ export default function CSVImporter({ onImportComplete, onClose }: CSVImporterPr
 
       csvRows.forEach((row, i) => {
         const rawDate = row[dateIndex];
-        if (!rawDate) return; // Skip empty date rows
+        if (rawDate === null || rawDate === undefined || String(rawDate).trim() === '') return; // Skip empty date rows
 
-        // Convert date into YYYY-MM-DD
-        let formattedDate = rawDate.replace(/\//g, '-').trim(); // support DD/MM/YYYY or YYYY/MM/DD
-        const dateParts = formattedDate.split('-');
-        if (dateParts.length === 3) {
-          if (dateParts[0].length === 2 && dateParts[2].length === 4) {
-            // DD-MM-YYYY -> YYYY-MM-DD
-            formattedDate = `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`;
-          }
-        }
-        
-        // Validate date string
-        const testDate = new Date(formattedDate);
-        if (isNaN(testDate.getTime())) {
+        const formattedDate = cleanDate(rawDate);
+        if (!formattedDate) {
           console.warn(`Pulei a linha ${i + 1} por possuir uma data inválida: ${rawDate}`);
           return;
         }
 
         // Sleep parsing
-        const rawSleepStatus = sleepStatusIndex !== -1 ? row[sleepStatusIndex]?.toLowerCase() : '';
+        const rawSleepStatus = sleepStatusIndex !== -1 ? String(row[sleepStatusIndex] || '').toLowerCase() : '';
         let sleepStatus: SleepStatus = 'dormiu';
         if (rawSleepStatus.includes('não') || rawSleepStatus.includes('nao')) sleepStatus = 'não dormiu';
         else if (rawSleepStatus.includes('tarde')) sleepStatus = 'dormiu tarde';
 
-        const sTime = sleepTimeIndex !== -1 ? row[sleepTimeIndex] || '21:00' : '21:00';
-        const wTime = wakeTimeIndex !== -1 ? row[wakeTimeIndex] || '07:00' : '07:00';
+        const sTime = sleepTimeIndex !== -1 ? cleanTime(row[sleepTimeIndex], '21:00') : '21:00';
+        const wTime = wakeTimeIndex !== -1 ? cleanTime(row[wakeTimeIndex], '07:00') : '07:00';
         const hoursSlept = calculateSleepDuration(sTime, wTime);
 
-        let qVal = 4;
-        if (sleepQualityIndex !== -1) {
-          const rawQ = Number(row[sleepQualityIndex]);
-          if (!isNaN(rawQ) && rawQ >= 1 && rawQ <= 5) qVal = rawQ;
-        }
-
-        let wakeCount = 0;
-        if (wakeUpCountIndex !== -1) {
-          const rawWk = parseInt(row[wakeUpCountIndex], 10);
-          if (!isNaN(rawWk)) wakeCount = Math.max(0, rawWk);
-        }
+        const qVal = sleepQualityIndex !== -1 ? cleanNumber(row[sleepQualityIndex], 4) : 4;
+        const wakeCount = wakeUpCountIndex !== -1 ? cleanNumber(row[wakeUpCountIndex], 0) : 0;
 
         // Seizures occurrence and counts
-        const rawOccurred = seizuresOccurredIndex !== -1 ? row[seizuresOccurredIndex]?.toLowerCase() : '';
-        let occurredVal = false;
-        if (rawOccurred.includes('si') || rawOccurred.includes('yes') || rawOccurred.includes('1') || rawOccurred.includes('true')) {
-          occurredVal = true;
-        }
+        const rawOccurred = seizuresOccurredIndex !== -1 ? row[seizuresOccurredIndex] : '';
+        let occurredVal = cleanBoolean(rawOccurred);
 
-        let mornCount = 0;
-        if (seizureMorningIndex !== -1) {
-          const parsedM = parseInt(row[seizureMorningIndex], 10);
-          if (!isNaN(parsedM)) mornCount = parsedM;
-        }
-
-        let aftCount = 0;
-        if (seizureAfternoonIndex !== -1) {
-          const parsedA = parseInt(row[seizureAfternoonIndex], 10);
-          if (!isNaN(parsedA)) aftCount = parsedA;
-        }
-
-        let ngtCount = 0;
-        if (seizureNightIndex !== -1) {
-          const parsedN = parseInt(row[seizureNightIndex], 10);
-          if (!isNaN(parsedN)) ngtCount = parsedN;
-        }
+        const mornCount = seizureMorningIndex !== -1 ? cleanNumber(row[seizureMorningIndex], 0) : 0;
+        const aftCount = seizureAfternoonIndex !== -1 ? cleanNumber(row[seizureAfternoonIndex], 0) : 0;
+        const ngtCount = seizureNightIndex !== -1 ? cleanNumber(row[seizureNightIndex], 0) : 0;
 
         const calculatedSum = mornCount + aftCount + ngtCount;
         if (calculatedSum > 0) occurredVal = true;
 
         // Medication parsing
-        const rawMed = medicationTakenIndex !== -1 ? row[medicationTakenIndex]?.toLowerCase() : '';
-        let medTaken = true;
-        if (rawMed.includes('não') || rawMed.includes('nao') || rawMed.includes('0') || rawMed.includes('false')) {
-          medTaken = false;
-        }
+        const rawMed = medicationTakenIndex !== -1 ? row[medicationTakenIndex] : '';
+        // If not mapped, default medication taken to true
+        const medTaken = medicationTakenIndex !== -1 ? cleanBoolean(rawMed) : true;
 
         const singleLog: Partial<DailyLog> = {
           date: formattedDate,
@@ -320,9 +457,9 @@ export default function CSVImporter({ onImportComplete, onClose }: CSVImporterPr
             sleepTime: sTime,
             wakeTime: wTime,
             hoursSlept,
-            quality: qVal,
-            wakeUpCount: wakeCount,
-            observations: sleepObsIndex !== -1 ? row[sleepObsIndex] || '' : ''
+            quality: Math.max(1, Math.min(5, qVal)),
+            wakeUpCount: Math.max(0, wakeCount),
+            observations: sleepObsIndex !== -1 ? String(row[sleepObsIndex] || '').trim() : ''
           },
           seizures: {
             occurred: occurredVal,
@@ -333,12 +470,12 @@ export default function CSVImporter({ onImportComplete, onClose }: CSVImporterPr
             afternoonDetails: { light: aftCount, medium: 0, strong: 0 },
             nightDetails: { light: ngtCount, medium: 0, strong: 0 },
             totalCount: occurredVal ? (calculatedSum || 1) : 0, // default to 1 if declared occurred but no count defined
-            triggers: seizureTriggersIndex !== -1 ? row[seizureTriggersIndex] || '' : '',
-            observations: seizureObsIndex !== -1 ? row[seizureObsIndex] || '' : ''
+            triggers: seizureTriggersIndex !== -1 ? String(row[seizureTriggersIndex] || '').trim() : '',
+            observations: seizureObsIndex !== -1 ? String(row[seizureObsIndex] || '').trim() : ''
           },
           medication: {
             taken: medTaken,
-            observations: medicationObsIndex !== -1 ? row[medicationObsIndex] || '' : ''
+            observations: medicationObsIndex !== -1 ? String(row[medicationObsIndex] || '').trim() : ''
           }
         };
 
