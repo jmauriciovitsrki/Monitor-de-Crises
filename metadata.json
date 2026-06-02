@@ -1,0 +1,6 @@
+{
+  "name": "Monitor de Crises e Sono",
+  "description": "Aplicativo para gerenciar crises convulsivas e qualidade do sono de crianças com suporte a relatórios personalizados e importações de planilhas do histórico de saúde.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

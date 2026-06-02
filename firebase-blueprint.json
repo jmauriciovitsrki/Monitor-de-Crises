@@ -1,0 +1,149 @@
+{
+  "entities": {
+    "DailyLog": {
+      "title": "DailyLog",
+      "description": "Daily record of sleep and seizure tracking for a child.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "The unique document ID (typically the log date in YYYY-MM-DD format)."
+        },
+        "userId": {
+          "type": "string",
+          "description": "The identifier of the user who recorded this daily log."
+        },
+        "date": {
+          "type": "string",
+          "format": "date",
+          "description": "The date of the entry in YYYY-MM-DD format."
+        },
+        "sleep": {
+          "type": "object",
+          "description": "Sleep metrics of the child for the previous night.",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": ["dormiu", "não dormiu", "dormiu tarde"],
+              "description": "General status of sleep."
+            },
+            "sleepTime": {
+              "type": "string",
+              "description": "HH:MM format of the sleep time."
+            },
+            "wakeTime": {
+              "type": "string",
+              "description": "HH:MM format of the wake time."
+            },
+            "hoursSlept": {
+              "type": "number",
+              "description": "Calculated total duration of sleep in hours."
+            },
+            "quality": {
+              "type": "number",
+              "description": "Sleep quality rating from 1 to 5."
+            },
+            "wakeUpCount": {
+              "type": "number",
+              "description": "Number of times the child woke up overnight."
+            },
+            "observations": {
+              "type": "string",
+              "description": "Text notes detailing sleep behavior or events."
+            }
+          },
+          "required": ["status", "quality", "wakeUpCount"]
+        },
+        "seizures": {
+          "type": "object",
+          "description": "Detailed log of seizures that occurred during the day.",
+          "properties": {
+            "occurred": {
+              "type": "boolean",
+              "description": "Whether any seizures occurred on this day."
+            },
+            "morningCount": {
+              "type": "number",
+              "description": "Number of seizures in the morning (06:00 - 12:00)."
+            },
+            "afternoonCount": {
+              "type": "number",
+              "description": "Number of seizures in the afternoon (12:00 - 18:00)."
+            },
+            "nightCount": {
+              "type": "number",
+              "description": "Number of seizures during the night/dawn (18:00 - 06:00)."
+            },
+            "morningDetails": {
+              "type": "object",
+              "properties": {
+                "light": { "type": "number" },
+                "medium": { "type": "number" },
+                "strong": { "type": "number" }
+              }
+            },
+            "afternoonDetails": {
+              "type": "object",
+              "properties": {
+                "light": { "type": "number" },
+                "medium": { "type": "number" },
+                "strong": { "type": "number" }
+              }
+            },
+            "nightDetails": {
+              "type": "object",
+              "properties": {
+                "light": { "type": "number" },
+                "medium": { "type": "number" },
+                "strong": { "type": "number" }
+              }
+            },
+            "totalCount": {
+              "type": "number",
+              "description": "Total seizures today (sum of morning, afternoon, night, or detailed strengths)."
+            },
+            "triggers": {
+              "type": "string",
+              "description": "Suspected triggers like fever, fatigue, sensory overload, etc."
+            },
+            "observations": {
+              "type": "string",
+              "description": "Additional text notes or descriptions of the seizures."
+            }
+          },
+          "required": ["occurred", "totalCount"]
+        },
+        "medication": {
+          "type": "object",
+          "description": "Medication details for the day.",
+          "properties": {
+            "taken": {
+              "type": "boolean",
+              "description": "Whether scheduled medicines were fully administered."
+            },
+            "observations": {
+              "type": "string",
+              "description": "Observations regarding medications (dose changes, refusal, etc.)"
+            }
+          },
+          "required": ["taken"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["userId", "date", "sleep", "seizures", "medication"]
+    }
+  },
+  "firestore": {
+    "users/{userId}/logs/{logId}": {
+      "schema": "DailyLog",
+      "description": "Stores user-specific historical logs of sleep, seizures, and medications."
+    }
+  }
+}
