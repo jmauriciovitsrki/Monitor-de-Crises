@@ -24,11 +24,103 @@ interface ColumnMapping {
   seizureMorning: string;
   seizureAfternoon: string;
   seizureNight: string;
+  // Specific crisis types/intensities
+  seizureFortesMorning: string;
+  seizureFortesAfternoon: string;
+  seizureFortesNight: string;
+  seizureMediasMorning: string;
+  seizureMediasAfternoon: string;
+  seizureMediasNight: string;
+  seizureLevesMorning: string;
+  seizureLevesAfternoon: string;
+  seizureLevesNight: string;
   seizureTriggers: string;
   seizureObs: string;
   medicationTaken: string;
   medicationObs: string;
 }
+
+const resolveExcelHeadersAndRows = (normalizedRows: string[][]): { headers: string[]; rows: string[][] } => {
+  // Find base header row containing 'data', 'date', 'dia', etc.
+  let baseHeaderRowIdx = -1;
+  for (let r = 0; r < normalizedRows.length; r++) {
+    const row = normalizedRows[r];
+    if (row && row.some(cell => {
+      const s = normalizeString(String(cell || ''));
+      return s === 'data' || s === 'date' || s === 'dia' || s.replace(/\s+/g, '') === 'datadoregistro';
+    })) {
+      baseHeaderRowIdx = r;
+      break;
+    }
+  }
+
+  // Fallback to row index 0 if not found
+  if (baseHeaderRowIdx === -1) {
+    return {
+      headers: normalizedRows[0] || [],
+      rows: normalizedRows.slice(1)
+    };
+  }
+
+  const baseHeaderRow = normalizedRows[baseHeaderRowIdx];
+  const finalHeaders: string[] = [];
+
+  // Define an array to hold the current active group name for each row above
+  const activeGroupsOnRow = new Array(baseHeaderRowIdx).fill('');
+
+  for (let c = 0; c < baseHeaderRow.length; c++) {
+    // 1. Update active groups for this column c by reading cells on rows above
+    for (let r = 0; r < baseHeaderRowIdx; r++) {
+      const parentRow = normalizedRows[r];
+      if (parentRow && parentRow[c] !== undefined && parentRow[c] !== null && String(parentRow[c]).trim() !== '') {
+        activeGroupsOnRow[r] = String(parentRow[c]).trim();
+      }
+    }
+
+    const rawBaseHeader = String(baseHeaderRow[c] || '').trim();
+    if (!rawBaseHeader) {
+      finalHeaders.push(`Coluna_${c}`);
+      continue;
+    }
+
+    // 2. Select the most specific group name (from lowest row index to highest row index above baseHeaderRow)
+    let parentCategory = '';
+    for (let r = baseHeaderRowIdx - 1; r >= 0; r--) {
+      const pVal = activeGroupsOnRow[r];
+      if (pVal) {
+        const pNorm = normalizeString(pVal);
+        if (pNorm && pNorm.length < 35 && !pNorm.includes('diario') && pNorm !== 'crise' && pNorm !== 'crises') {
+          parentCategory = pVal;
+          break; // closest specific group
+        }
+      }
+    }
+
+    if (parentCategory) {
+      finalHeaders.push(`${parentCategory} - ${rawBaseHeader}`);
+    } else {
+      finalHeaders.push(rawBaseHeader);
+    }
+  }
+
+  // Ensure all headers are unique (if duplicate ones still exist somehow, append column index)
+  const headerCountMap = new Map<string, number>();
+  const uniqueHeaders = finalHeaders.map((h, idx) => {
+    if (!h) return `Coluna_${idx}`;
+    const hLower = h.toLowerCase();
+    const count = headerCountMap.get(hLower) || 0;
+    headerCountMap.set(hLower, count + 1);
+    if (count > 0) {
+      return `${h} (${count + 1})`;
+    }
+    return h;
+  });
+
+  return {
+    headers: uniqueHeaders,
+    rows: normalizedRows.slice(baseHeaderRowIdx + 1)
+  };
+};
 
 const normalizeString = (str: string): string => {
   return str
@@ -218,6 +310,15 @@ const autoMatchHeaders = (headers: string[]): ColumnMapping => {
     seizureMorning: '',
     seizureAfternoon: '',
     seizureNight: '',
+    seizureFortesMorning: '',
+    seizureFortesAfternoon: '',
+    seizureFortesNight: '',
+    seizureMediasMorning: '',
+    seizureMediasAfternoon: '',
+    seizureMediasNight: '',
+    seizureLevesMorning: '',
+    seizureLevesAfternoon: '',
+    seizureLevesNight: '',
     seizureTriggers: '',
     seizureObs: '',
     medicationTaken: '',
@@ -242,13 +343,43 @@ const autoMatchHeaders = (headers: string[]): ColumnMapping => {
     } else if (hNorm.includes('obs') && (hNorm.includes('sono') || hNorm.includes('dormir'))) {
       newMapping.sleepObs = header;
     } else if (hNorm.includes('teve crise') || hNorm.includes('crise?') || hNorm.includes('ocorreu') || (hNorm.includes('crise') && !hNorm.includes('obs') && !hNorm.includes('gatilho') && !hNorm.includes('manha') && !hNorm.includes('tarde') && !hNorm.includes('noite'))) {
-      newMapping.seizuresOccurred = header;
-    } else if ((hNorm.includes('manha') || hNorm.includes('morning')) && !hNorm.includes('obs') && !hNorm.includes('sono') && !hNorm.includes('medic') && !hNorm.includes('remedio')) {
-      newMapping.seizureMorning = header;
+      if (!hNorm.includes('forte') && !hNorm.includes('media') && !hNorm.includes('méd') && !hNorm.includes('leve')) {
+        newMapping.seizuresOccurred = header;
+      }
+    } 
+    // Exact mapping for specific intensity + periods
+    else if (hNorm.includes('forte') && hNorm.includes('manha')) {
+      newMapping.seizureFortesMorning = header;
+    } else if (hNorm.includes('forte') && hNorm.includes('tarde')) {
+      newMapping.seizureFortesAfternoon = header;
+    } else if (hNorm.includes('forte') && (hNorm.includes('noite') || hNorm.includes('madrugada'))) {
+      newMapping.seizureFortesNight = header;
+    } else if ((hNorm.includes('media') || hNorm.includes('méd')) && hNorm.includes('manha')) {
+      newMapping.seizureMediasMorning = header;
+    } else if ((hNorm.includes('media') || hNorm.includes('méd')) && hNorm.includes('tarde')) {
+      newMapping.seizureMediasAfternoon = header;
+    } else if ((hNorm.includes('media') || hNorm.includes('méd')) && (hNorm.includes('noite') || hNorm.includes('madrugada'))) {
+      newMapping.seizureMediasNight = header;
+    } else if (hNorm.includes('leve') && hNorm.includes('manha')) {
+      newMapping.seizureLevesMorning = header;
+    } else if (hNorm.includes('leve') && hNorm.includes('tarde')) {
+      newMapping.seizureLevesAfternoon = header;
+    } else if (hNorm.includes('leve') && (hNorm.includes('noite') || hNorm.includes('madrugada'))) {
+      newMapping.seizureLevesNight = header;
+    }
+    // Simple period mapping if fallback
+    else if ((hNorm.includes('manha') || hNorm.includes('morning')) && !hNorm.includes('obs') && !hNorm.includes('sono') && !hNorm.includes('medic') && !hNorm.includes('remedio')) {
+      if (!newMapping.seizureMorning && !hNorm.includes('forte') && !hNorm.includes('media') && !hNorm.includes('méd') && !hNorm.includes('leve')) {
+        newMapping.seizureMorning = header;
+      }
     } else if ((hNorm.includes('tarde') || hNorm.includes('afternoon')) && !hNorm.includes('obs') && !hNorm.includes('sono') && !hNorm.includes('medic') && !hNorm.includes('remedio')) {
-      newMapping.seizureAfternoon = header;
+      if (!newMapping.seizureAfternoon && !hNorm.includes('forte') && !hNorm.includes('media') && !hNorm.includes('méd') && !hNorm.includes('leve')) {
+        newMapping.seizureAfternoon = header;
+      }
     } else if ((hNorm.includes('noite') || hNorm.includes('night') || hNorm.includes('madrugada')) && !hNorm.includes('obs') && !hNorm.includes('sono') && !hNorm.includes('medic') && !hNorm.includes('remedio')) {
-      newMapping.seizureNight = header;
+      if (!newMapping.seizureNight && !hNorm.includes('forte') && !hNorm.includes('media') && !hNorm.includes('méd') && !hNorm.includes('leve')) {
+        newMapping.seizureNight = header;
+      }
     } else if (hNorm.includes('gatilho') || hNorm.includes('trigger')) {
       newMapping.seizureTriggers = header;
     } else if (hNorm.includes('obs') && (hNorm.includes('crise') || hNorm.includes('convul'))) {
@@ -261,6 +392,96 @@ const autoMatchHeaders = (headers: string[]): ColumnMapping => {
   });
 
   return newMapping;
+};
+
+const isRowActive = (row: string[], mapping: ColumnMapping, csvHeaders: string[]): boolean => {
+  const getColValue = (field: keyof ColumnMapping): string => {
+    const colName = mapping[field];
+    if (!colName) return '';
+    const idx = csvHeaders.indexOf(colName);
+    if (idx === -1) return '';
+    return String(row[idx] || '').trim();
+  };
+
+  const sleepStatus = getColValue('sleepStatus');
+  const sleepTime = getColValue('sleepTime');
+  const wakeTime = getColValue('wakeTime');
+  const sleepQuality = getColValue('sleepQuality');
+  const wakeUpCount = getColValue('wakeUpCount');
+  const sleepObs = getColValue('sleepObs');
+  
+  const seizuresOccurred = getColValue('seizuresOccurred');
+  const seizureMorning = getColValue('seizureMorning');
+  const seizureAfternoon = getColValue('seizureAfternoon');
+  const seizureNight = getColValue('seizureNight');
+
+  const seizureFortesMorning = getColValue('seizureFortesMorning');
+  const seizureFortesAfternoon = getColValue('seizureFortesAfternoon');
+  const seizureFortesNight = getColValue('seizureFortesNight');
+  const seizureMediasMorning = getColValue('seizureMediasMorning');
+  const seizureMediasAfternoon = getColValue('seizureMediasAfternoon');
+  const seizureMediasNight = getColValue('seizureMediasNight');
+  const seizureLevesMorning = getColValue('seizureLevesMorning');
+  const seizureLevesAfternoon = getColValue('seizureLevesAfternoon');
+  const seizureLevesNight = getColValue('seizureLevesNight');
+
+  const seizureTriggers = getColValue('seizureTriggers');
+  const seizureObs = getColValue('seizureObs');
+  
+  const medicationTaken = getColValue('medicationTaken');
+  const medicationObs = getColValue('medicationObs');
+
+  // Text notes are always clear indicators of manual logging:
+  if (sleepObs || seizureTriggers || seizureObs || medicationObs) return true;
+
+  // Timings or specific values:
+  if (sleepTime || wakeTime) return true;
+  if (wakeUpCount && wakeUpCount !== '0' && wakeUpCount !== '') return true;
+
+  const checkCountHasVal = (val: string): boolean => {
+    return val !== '' && val !== '0';
+  };
+
+  if (checkCountHasVal(seizureMorning) || checkCountHasVal(seizureAfternoon) || checkCountHasVal(seizureNight)) return true;
+  
+  if (
+    checkCountHasVal(seizureFortesMorning) || checkCountHasVal(seizureFortesAfternoon) || checkCountHasVal(seizureFortesNight) ||
+    checkCountHasVal(seizureMediasMorning) || checkCountHasVal(seizureMediasAfternoon) || checkCountHasVal(seizureMediasNight) ||
+    checkCountHasVal(seizureLevesMorning) || checkCountHasVal(seizureLevesAfternoon) || checkCountHasVal(seizureLevesNight)
+  ) {
+    return true;
+  }
+
+  if (seizuresOccurred) {
+    const norm = normalizeString(seizuresOccurred);
+    if (norm === 'sim' || norm === 's' || norm === 'yes' || norm === 'y' || norm === 'teve' || norm === '1' || norm === 'true') {
+      return true;
+    }
+    if (norm === 'nao' || norm === 'não' || norm === 'n' || norm === 'no' || norm === 'false') {
+      return true;
+    }
+  }
+
+  // Sleep status contains actual non-default state:
+  if (sleepStatus) {
+    const norm = normalizeString(sleepStatus);
+    if (norm !== '' && norm !== 'dormiu' && norm !== 'dorme' && norm !== 'sim' && norm !== 'ok') {
+      return true;
+    }
+  }
+
+  // Sleep quality is filled:
+  if (sleepQuality && sleepQuality !== '') return true;
+
+  // Medication is filled:
+  if (medicationTaken) {
+    const norm = normalizeString(medicationTaken);
+    if (norm === 'sim' || norm === 's' || norm === 'yes' || norm === 'y' || norm === 'nao' || norm === 'não' || norm === 'n' || norm === 'no') {
+      return true;
+    }
+  }
+
+  return false;
 };
 
 export default function CSVImporter({ onImportComplete, onClose }: CSVImporterProps) {
@@ -282,12 +503,23 @@ export default function CSVImporter({ onImportComplete, onClose }: CSVImporterPr
     seizureMorning: '',
     seizureAfternoon: '',
     seizureNight: '',
+    seizureFortesMorning: '',
+    seizureFortesAfternoon: '',
+    seizureFortesNight: '',
+    seizureMediasMorning: '',
+    seizureMediasAfternoon: '',
+    seizureMediasNight: '',
+    seizureLevesMorning: '',
+    seizureLevesAfternoon: '',
+    seizureLevesNight: '',
     seizureTriggers: '',
     seizureObs: '',
     medicationTaken: '',
     medicationObs: ''
   });
 
+  const [allParsedLogs, setAllParsedLogs] = useState<{ log: Partial<DailyLog>; isActive: boolean }[]>([]);
+  const [filterActiveOnly, setFilterActiveOnly] = useState<boolean>(true);
   const [parsedLogs, setParsedLogs] = useState<Partial<DailyLog>[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -356,9 +588,9 @@ export default function CSVImporter({ onImportComplete, onClose }: CSVImporterPr
             throw new Error('A planilha selecionada não possui dados legíveis.');
           }
           
-          const headers = normalizedRows[0];
+          const { headers, rows } = resolveExcelHeadersAndRows(normalizedRows);
           setCsvHeaders(headers);
-          setCsvRows(normalizedRows.slice(1));
+          setCsvRows(rows);
           
           // Auto-match mapper by content patterns
           setMapping(autoMatchHeaders(headers));
@@ -380,9 +612,9 @@ export default function CSVImporter({ onImportComplete, onClose }: CSVImporterPr
             throw new Error('O arquivo CSV selecionado está vazio.');
           }
           
-          const headers = parsed[0];
+          const { headers, rows } = resolveExcelHeadersAndRows(parsed);
           setCsvHeaders(headers);
-          setCsvRows(parsed.slice(1));
+          setCsvRows(rows);
           
           // Auto-match mapper by content patterns
           setMapping(autoMatchHeaders(headers));
@@ -408,7 +640,7 @@ export default function CSVImporter({ onImportComplete, onClose }: CSVImporterPr
     }
 
     try {
-      const logsResult: Partial<DailyLog>[] = [];
+      const logsResult: { log: Partial<DailyLog>; isActive: boolean }[] = [];
       
       const dateIndex = mapping.date ? csvHeaders.indexOf(mapping.date) : -1;
       const sleepStatusIndex = mapping.sleepStatus ? csvHeaders.indexOf(mapping.sleepStatus) : -1;
@@ -418,9 +650,21 @@ export default function CSVImporter({ onImportComplete, onClose }: CSVImporterPr
       const wakeUpCountIndex = mapping.wakeUpCount ? csvHeaders.indexOf(mapping.wakeUpCount) : -1;
       const sleepObsIndex = mapping.sleepObs ? csvHeaders.indexOf(mapping.sleepObs) : -1;
       const seizuresOccurredIndex = mapping.seizuresOccurred ? csvHeaders.indexOf(mapping.seizuresOccurred) : -1;
+      
       const seizureMorningIndex = mapping.seizureMorning ? csvHeaders.indexOf(mapping.seizureMorning) : -1;
       const seizureAfternoonIndex = mapping.seizureAfternoon ? csvHeaders.indexOf(mapping.seizureAfternoon) : -1;
       const seizureNightIndex = mapping.seizureNight ? csvHeaders.indexOf(mapping.seizureNight) : -1;
+      
+      const seizureFortesMorningIndex = mapping.seizureFortesMorning ? csvHeaders.indexOf(mapping.seizureFortesMorning) : -1;
+      const seizureFortesAfternoonIndex = mapping.seizureFortesAfternoon ? csvHeaders.indexOf(mapping.seizureFortesAfternoon) : -1;
+      const seizureFortesNightIndex = mapping.seizureFortesNight ? csvHeaders.indexOf(mapping.seizureFortesNight) : -1;
+      const seizureMediasMorningIndex = mapping.seizureMediasMorning ? csvHeaders.indexOf(mapping.seizureMediasMorning) : -1;
+      const seizureMediasAfternoonIndex = mapping.seizureMediasAfternoon ? csvHeaders.indexOf(mapping.seizureMediasAfternoon) : -1;
+      const seizureMediasNightIndex = mapping.seizureMediasNight ? csvHeaders.indexOf(mapping.seizureMediasNight) : -1;
+      const seizureLevesMorningIndex = mapping.seizureLevesMorning ? csvHeaders.indexOf(mapping.seizureLevesMorning) : -1;
+      const seizureLevesAfternoonIndex = mapping.seizureLevesAfternoon ? csvHeaders.indexOf(mapping.seizureLevesAfternoon) : -1;
+      const seizureLevesNightIndex = mapping.seizureLevesNight ? csvHeaders.indexOf(mapping.seizureLevesNight) : -1;
+
       const seizureTriggersIndex = mapping.seizureTriggers ? csvHeaders.indexOf(mapping.seizureTriggers) : -1;
       const seizureObsIndex = mapping.seizureObs ? csvHeaders.indexOf(mapping.seizureObs) : -1;
       const medicationTakenIndex = mapping.medicationTaken ? csvHeaders.indexOf(mapping.medicationTaken) : -1;
@@ -435,21 +679,6 @@ export default function CSVImporter({ onImportComplete, onClose }: CSVImporterPr
           console.warn(`Pulei a linha ${i + 1} por possuir uma data inválida: ${rawDate}`);
           return;
         }
-
-        // Check if there is any actual data recorded in this row besides the pre-filled date
-        const hasOtherData = [
-          sleepStatusIndex, sleepTimeIndex, wakeTimeIndex, sleepQualityIndex,
-          wakeUpCountIndex, sleepObsIndex, seizuresOccurredIndex, seizureMorningIndex,
-          seizureAfternoonIndex, seizureNightIndex, seizureTriggersIndex,
-          seizureObsIndex, medicationTakenIndex, medicationObsIndex
-        ].some(idx => {
-          if (idx === -1) return false;
-          const val = row[idx];
-          return val !== null && val !== undefined && String(val).trim() !== '';
-        });
-
-        // Skip rows that are empty except for the date
-        if (!hasOtherData) return;
 
         // Sleep parsing
         const rawSleepStatus = sleepStatusIndex !== -1 ? String(row[sleepStatusIndex] || '').toLowerCase() : '';
@@ -468,9 +697,21 @@ export default function CSVImporter({ onImportComplete, onClose }: CSVImporterPr
         const rawOccurred = seizuresOccurredIndex !== -1 ? row[seizuresOccurredIndex] : '';
         let occurredVal = cleanBoolean(rawOccurred);
 
-        const mornCount = seizureMorningIndex !== -1 ? cleanNumber(row[seizureMorningIndex], 0) : 0;
-        const aftCount = seizureAfternoonIndex !== -1 ? cleanNumber(row[seizureAfternoonIndex], 0) : 0;
-        const ngtCount = seizureNightIndex !== -1 ? cleanNumber(row[seizureNightIndex], 0) : 0;
+        const fortMorn = seizureFortesMorningIndex !== -1 ? cleanNumber(row[seizureFortesMorningIndex], 0) : 0;
+        const fortAft = seizureFortesAfternoonIndex !== -1 ? cleanNumber(row[seizureFortesAfternoonIndex], 0) : 0;
+        const fortNgt = seizureFortesNightIndex !== -1 ? cleanNumber(row[seizureFortesNightIndex], 0) : 0;
+
+        const medMorn = seizureMediasMorningIndex !== -1 ? cleanNumber(row[seizureMediasMorningIndex], 0) : 0;
+        const medAft = seizureMediasAfternoonIndex !== -1 ? cleanNumber(row[seizureMediasAfternoonIndex], 0) : 0;
+        const medNgt = seizureMediasNightIndex !== -1 ? cleanNumber(row[seizureMediasNightIndex], 0) : 0;
+
+        const levMorn = seizureLevesMorningIndex !== -1 ? cleanNumber(row[seizureLevesMorningIndex], 0) : 0;
+        const levAft = seizureLevesAfternoonIndex !== -1 ? cleanNumber(row[seizureLevesAfternoonIndex], 0) : 0;
+        const levNgt = seizureLevesNightIndex !== -1 ? cleanNumber(row[seizureLevesNightIndex], 0) : 0;
+
+        const mornCount = (seizureMorningIndex !== -1 ? cleanNumber(row[seizureMorningIndex], 0) : 0) + fortMorn + medMorn + levMorn;
+        const aftCount = (seizureAfternoonIndex !== -1 ? cleanNumber(row[seizureAfternoonIndex], 0) : 0) + fortAft + medAft + levAft;
+        const ngtCount = (seizureNightIndex !== -1 ? cleanNumber(row[seizureNightIndex], 0) : 0) + fortNgt + medNgt + levNgt;
 
         const calculatedSum = mornCount + aftCount + ngtCount;
         const occurredCount = cleanNumber(rawOccurred, 0);
@@ -511,9 +752,9 @@ export default function CSVImporter({ onImportComplete, onClose }: CSVImporterPr
             morningCount: mornCount,
             afternoonCount: aftCount,
             nightCount: ngtCount,
-            morningDetails: { light: mornCount, medium: 0, strong: 0 }, // fallback values
-            afternoonDetails: { light: aftCount, medium: 0, strong: 0 },
-            nightDetails: { light: ngtCount, medium: 0, strong: 0 },
+            morningDetails: { light: levMorn, medium: medMorn, strong: fortMorn },
+            afternoonDetails: { light: levAft, medium: medAft, strong: fortAft },
+            nightDetails: { light: levNgt, medium: medNgt, strong: fortNgt },
             totalCount: finalTotalCount,
             triggers: seizureTriggersIndex !== -1 ? String(row[seizureTriggersIndex] || '').trim() : '',
             observations: seizureObsIndex !== -1 ? String(row[seizureObsIndex] || '').trim() : ''
@@ -524,18 +765,32 @@ export default function CSVImporter({ onImportComplete, onClose }: CSVImporterPr
           }
         };
 
-        logsResult.push(singleLog);
+        const active = isRowActive(row, mapping, csvHeaders);
+        logsResult.push({ log: singleLog, isActive: active });
       });
 
       if (logsResult.length === 0) {
         throw new Error('Nenhum registro correspondente pôde ser analisado com os mapeamentos fornecidos.');
       }
 
-      setParsedLogs(logsResult);
+      setAllParsedLogs(logsResult);
+      const finalLogs = filterActiveOnly
+        ? logsResult.filter(x => x.isActive).map(x => x.log)
+        : logsResult.map(x => x.log);
+
+      setParsedLogs(finalLogs);
       setStep(3);
     } catch (err: any) {
       setErrorMsg(err.message || 'Erro de processamento nos dados. Verifique o formato do arquivo.');
     }
+  };
+
+  const handleToggleFilterActiveOnly = (checked: boolean) => {
+    setFilterActiveOnly(checked);
+    const finalLogs = checked
+      ? allParsedLogs.filter(x => x.isActive).map(x => x.log)
+      : allParsedLogs.map(x => x.log);
+    setParsedLogs(finalLogs);
   };
 
   const handleTriggerUpload = async () => {
@@ -543,7 +798,21 @@ export default function CSVImporter({ onImportComplete, onClose }: CSVImporterPr
     try {
       await onImportComplete(parsedLogs);
     } catch (err: any) {
-      setErrorMsg('Erro ao gravar o lote no banco de dados. Verifique a permissão do usuário.');
+      const errMsg = String(err.message || err);
+      // Detailed, professional Firebase user guides depending on exact connection issues
+      if (errMsg.includes('auth/unauthorized-domain') || errMsg.includes('unauthorized-domain')) {
+        setErrorMsg(
+          'Erro de Autorização (auth/unauthorized-domain): Este domínio (vercel.app) não está autorizado no painel Firebase de Autenticação. Acesse o Console do Firebase > Authentication > aba "Settings" > "Authorized Domains" (Domínios Autorizados) e adicione o domínio atual para habilitar conexões seguras de escrita no banco de dados.'
+        );
+      } else if (errMsg.includes('permission-denied') || errMsg.includes('PERMISSION_DENIED') || errMsg.includes('regras') || errMsg.includes('permissão')) {
+        setErrorMsg(
+          'Erro de Permissão (Firestore Security Rules): O banco de dados recusou a gravação do seu lote. Certifique-se de que você está devidamente conectado com seu usuário do painel (no botão de Login) para validar as regras do banco de segurança.'
+        );
+      } else {
+        setErrorMsg(
+          'Falha na gravação do lote de dados no Firebase. Detalhe: ' + errMsg + '. Certifique-se de vincular suas credenciais ou usar o modo Demonstração Local.'
+        );
+      }
     } finally {
       setIsSyncing(false);
     }
@@ -658,9 +927,20 @@ export default function CSVImporter({ onImportComplete, onClose }: CSVImporterPr
                   { field: 'wakeUpCount', label: 'Vezes Acordou Noite (Opcional)', desc: 'Número inteiro' },
                   { field: 'sleepObs', label: 'Notas e Obs do Sono (Opcional)', desc: 'Texto livre' },
                   { field: 'seizuresOccurred', label: 'Ocorreu Crise? (Opcional)', desc: 'Geralmente "Sim" ou "Não"' },
-                  { field: 'seizureMorning', label: 'Total de Crises de Manhã (Opcional)', desc: 'Quantidade no período' },
-                  { field: 'seizureAfternoon', label: 'Total de Crises à Tarde (Opcional)', desc: 'Quantidade no período' },
-                  { field: 'seizureNight', label: 'Total de Crises de Noite (Opcional)', desc: 'Quantidade no período' },
+                  { field: 'seizureMorning', label: 'Total de Crises de Manhã (Simples)', desc: 'Não preencher se usar a matriz abaixo' },
+                  { field: 'seizureAfternoon', label: 'Total de Crises à Tarde (Simples)', desc: 'Não preencher se usar a matriz abaixo' },
+                  { field: 'seizureNight', label: 'Total de Crises de Noite (Simples)', desc: 'Não preencher se usar a matriz abaixo' },
+                  // Specific levels:
+                  { field: 'seizureFortesMorning', label: 'Crises FORTES - Manhã', desc: 'Preenchido automaticamente' },
+                  { field: 'seizureFortesAfternoon', label: 'Crises FORTES - Tarde', desc: 'Preenchido automaticamente' },
+                  { field: 'seizureFortesNight', label: 'Crises FORTES - Noite', desc: 'Preenchido automaticamente' },
+                  { field: 'seizureMediasMorning', label: 'Crises MÉDIAS - Manhã', desc: 'Preenchido automaticamente' },
+                  { field: 'seizureMediasAfternoon', label: 'Crises MÉDIAS - Tarde', desc: 'Preenchido automaticamente' },
+                  { field: 'seizureMediasNight', label: 'Crises MÉDIAS - Noite', desc: 'Preenchido automaticamente' },
+                  { field: 'seizureLevesMorning', label: 'Crises LEVES - Manhã', desc: 'Preenchido automaticamente' },
+                  { field: 'seizureLevesAfternoon', label: 'Crises LEVES - Tarde', desc: 'Preenchido automaticamente' },
+                  { field: 'seizureLevesNight', label: 'Crises LEVES - Noite', desc: 'Preenchido automaticamente' },
+                  // End specific levels
                   { field: 'seizureTriggers', label: 'Gatilhos da Crise (Opcional)', desc: 'Fatores desencadeadores' },
                   { field: 'seizureObs', label: 'Notas e Comportamento da Crise (Opcional)', desc: 'Texto livre' },
                   { field: 'medicationTaken', label: 'Tomou Remedicação? (Opcional)', desc: 'Medicação tomada: "Sim" ou "Não"' },
@@ -693,13 +973,35 @@ export default function CSVImporter({ onImportComplete, onClose }: CSVImporterPr
           {/* STEP 3: PREVIEW & REVIEW */}
           {step === 3 && (
             <div className="space-y-5">
-              <div className="bg-emerald-50 rounded-2xl p-4 border border-emerald-100 flex items-start gap-3">
-                <CheckCircle className="h-5 w-5 text-emerald-500 mt-0.5 flex-shrink-0" />
-                <div className="text-xs text-slate-600">
-                  <p className="font-bold text-slate-800">Pronto para mapear no Banco de Dados!</p>
-                  <p className="mt-1">
-                    Analisamos sua planilha e localizamos <span className="font-bold text-emerald-800">{parsedLogs.length} linhas de registros válidos</span> prontos para serem estruturados.
+              <div className="bg-emerald-50 rounded-2xl p-4 border border-emerald-100 flex items-start gap-4 shadow-xs">
+                <CheckCircle className="h-5 w-5 text-emerald-500 mt-1 flex-shrink-0" />
+                <div className="text-xs text-slate-600 space-y-1">
+                  <p className="font-black text-rose-600 tracking-tight text-sm">Pronto para a gravação de dados!</p>
+                  <p>
+                    Análise concluída com sucesso. Do total mapeado de <span className="font-bold text-slate-800">{allParsedLogs.length} datas</span> na planilha, localizamos <span className="font-bold text-emerald-600">{allParsedLogs.filter(x => x.isActive).length} dias com alguma informação ou observação registrada</span> de crises/sono/remédios.
                   </p>
+                </div>
+              </div>
+
+              {/* Filtering selector box */}
+              <div className="bg-rose-50/50 border border-rose-100/60 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <h4 className="text-xs font-bold text-slate-800">Filtragem Dinâmica de Linhas</h4>
+                  <p className="text-[10px] text-slate-500 leading-relaxed">
+                    Ative esta opção para ignorar datas vazias (que contêm apenas a data pré-preenchida, mas sem anotações ou eventos inseridos). Recomendado para manter seu histórico limpo!
+                  </p>
+                </div>
+                <div className="flex items-center gap-2.5 bg-white border border-rose-100/50 rounded-xl px-3 py-2 shadow-sm flex-shrink-0">
+                  <input
+                    type="checkbox"
+                    id="toggle-filter-active"
+                    checked={filterActiveOnly}
+                    onChange={(e) => handleToggleFilterActiveOnly(e.target.checked)}
+                    className="h-4 w-4 text-rose-500 rounded border-slate-300 focus:ring-rose-400 cursor-pointer"
+                  />
+                  <label htmlFor="toggle-filter-active" className="text-xs font-bold text-slate-700 cursor-pointer select-none">
+                    Filtrar apenas ativos ({allParsedLogs.filter(x => x.isActive).length} de {allParsedLogs.length})
+                  </label>
                 </div>
               </div>
 
