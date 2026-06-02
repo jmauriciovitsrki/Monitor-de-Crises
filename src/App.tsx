@@ -15,7 +15,7 @@ import {
   Heart, Calendar, FileSpreadsheet, BarChart3, LogOut, CheckSquare, RefreshCw, 
   Settings2, Smartphone, ShieldCheck, Info, Download, Upload, Cloud, CloudOff, Database
 } from 'lucide-react';
-import { signInWithPopup } from 'firebase/auth';
+import { signInWithPopup, signInWithRedirect, getRedirectResult } from 'firebase/auth';
 import { googleProvider } from './firebase';
 
 export default function App() {
@@ -525,13 +525,6 @@ export default function App() {
             ⚠️ <strong>Atenção:</strong> Você está no visualizador do AI Studio. 
             Para evitar que seus dados locais sumam ao recarregar a página (F5) ou que o Login do Google seja bloqueado, clique em <strong>"Open in a new tab" (Abrir em nova aba)</strong> no canto superior direito!
           </span>
-        </div>
-      )}
-
-      {isLocalDemo && (
-        <div className="bg-amber-500 text-white px-4 py-2 text-center text-xs font-bold flex items-center justify-center gap-2" id="demo-mode-alert">
-          <Info className="h-4 w-4" />
-          <span>Modo de Demonstração Local Ativo. Dados salvos apenas neste navegador. Vincule o Firebase para obter armazenamento durável na nuvem.</span>
         </div>
       )}
 

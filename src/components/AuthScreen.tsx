@@ -15,7 +15,7 @@ export default function AuthScreen({ onLocalDemo, isLoading }: AuthScreenProps) 
 
   const handleGoogleSignIn = async () => {
     if (placeholder) {
-      setErrorMsg('Firebase está com credenciais temporárias do AI Studio. Utilize o "Modo de Demonstração Local" abaixo para utilizar o aplicativo de forma offline enquanto finaliza a sincronização.');
+      setErrorMsg('Firebase está com credenciais temporárias do AI Studio. Por favor, vincule e ative o Firebase na barra lateral de integrações para poder se autenticar e sincronizar.');
       return;
     }
     setErrorMsg(null);
@@ -77,20 +77,6 @@ export default function AuthScreen({ onLocalDemo, isLoading }: AuthScreenProps) 
               >
                 <LogIn className="h-5 w-5" />
                 Continuar com o Google
-              </button>
-
-              <div className="relative flex py-2 items-center">
-                <div className="flex-grow border-t border-slate-200"></div>
-                <span className="flex-shrink mx-4 text-xs text-slate-400">ou experimentar</span>
-                <div className="flex-grow border-t border-slate-200"></div>
-              </div>
-
-              <button
-                id="btn-demo"
-                onClick={onLocalDemo}
-                className="w-full flex items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2.5 px-4 rounded-xl transition duration-150 text-sm select-none cursor-pointer border border-slate-200"
-              >
-                Modo de Demonstração Local (Offline)
               </button>
             </div>
           )}

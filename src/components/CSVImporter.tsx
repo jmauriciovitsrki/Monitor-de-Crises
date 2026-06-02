@@ -810,7 +810,7 @@ export default function CSVImporter({ onImportComplete, onClose }: CSVImporterPr
         );
       } else {
         setErrorMsg(
-          'Falha na gravação do lote de dados no Firebase. Detalhe: ' + errMsg + '. Certifique-se de vincular suas credenciais ou usar o modo Demonstração Local.'
+          'Falha na gravação do lote de dados no Firebase. Detalhe: ' + errMsg + '.'
         );
       }
     } finally {
