@@ -17,6 +17,7 @@ type PeriodType = 'week' | 'month' | 'year' | 'custom';
 
 export default function ReportDashboard({ logs, childName = "Criança" }: ReportDashboardProps) {
   const [period, setPeriod] = useState<PeriodType>('month');
+  const [crisesChartMode, setCrisesChartMode] = useState<'period' | 'intensity'>('period');
   const [startDateStr, setStartDateStr] = useState<string>(() => {
     // 30 days ago default
     const d = new Date();
@@ -94,6 +95,9 @@ export default function ReportDashboard({ logs, childName = "Criança" }: Report
         morningCrises: 0,
         afternoonCrises: 0,
         nightCrises: 0,
+        totalLight: 0,
+        totalMedium: 0,
+        totalStrong: 0,
         triggersRank: [] as { trigger: string; count: number }[]
       };
     }
@@ -107,6 +111,9 @@ export default function ReportDashboard({ logs, childName = "Criança" }: Report
     let morningCrises = 0;
     let afternoonCrises = 0;
     let nightCrises = 0;
+    let totalLight = 0;
+    let totalMedium = 0;
+    let totalStrong = 0;
 
     const triggersMap: { [key: string]: number } = {};
 
@@ -118,6 +125,14 @@ export default function ReportDashboard({ logs, childName = "Criança" }: Report
         morningCrises += log.seizures.morningCount || 0;
         afternoonCrises += log.seizures.afternoonCount || 0;
         nightCrises += log.seizures.nightCount || 0;
+
+        const mDetails = log.seizures.morningDetails || { light: 0, medium: 0, strong: 0 };
+        const aDetails = log.seizures.afternoonDetails || { light: 0, medium: 0, strong: 0 };
+        const nDetails = log.seizures.nightDetails || { light: 0, medium: 0, strong: 0 };
+
+        totalLight += (mDetails.light || 0) + (aDetails.light || 0) + (nDetails.light || 0);
+        totalMedium += (mDetails.medium || 0) + (aDetails.medium || 0) + (nDetails.medium || 0);
+        totalStrong += (mDetails.strong || 0) + (aDetails.strong || 0) + (nDetails.strong || 0);
 
         // Count triggers
         if (log.seizures.triggers) {
@@ -157,6 +172,9 @@ export default function ReportDashboard({ logs, childName = "Criança" }: Report
       morningCrises,
       afternoonCrises,
       nightCrises,
+      totalLight,
+      totalMedium,
+      totalStrong,
       triggersRank
     };
   }, [filteredLogs]);
@@ -167,12 +185,23 @@ export default function ReportDashboard({ logs, childName = "Criança" }: Report
       const displayDate = log.date.substring(5).split('-').reverse().join('/'); // MM/DD format or DD/MM
       const weekday = getWeekdayLabel(log.date);
       
+      const mDetails = log.seizures.morningDetails || { light: 0, medium: 0, strong: 0 };
+      const aDetails = log.seizures.afternoonDetails || { light: 0, medium: 0, strong: 0 };
+      const nDetails = log.seizures.nightDetails || { light: 0, medium: 0, strong: 0 };
+
+      const lCount = (mDetails.light || 0) + (aDetails.light || 0) + (nDetails.light || 0);
+      const mCount = (mDetails.medium || 0) + (aDetails.medium || 0) + (nDetails.medium || 0);
+      const sCount = (mDetails.strong || 0) + (aDetails.strong || 0) + (nDetails.strong || 0);
+
       return {
         name: `${weekday} ${displayDate}`,
         'Crises Totais': log.seizures.totalCount || 0,
         'Manhã': log.seizures.morningCount || 0,
         'Tarde': log.seizures.afternoonCount || 0,
         'Noite/Despertar': log.seizures.nightCount || 0,
+        'Fracas (Leves)': lCount,
+        'Médias': mCount,
+        'Fortes': sCount,
         'Duração do Sono (h)': log.sleep.status === 'não dormiu' ? 0 : log.sleep.hoursSlept || 0,
         'Qualidade Sono': log.sleep.quality || 0,
         'Acordou': log.sleep.wakeUpCount || 0
@@ -372,9 +401,27 @@ export default function ReportDashboard({ logs, childName = "Criança" }: Report
                 <Heart className="h-5 w-5 text-rose-500 fill-current mb-3" />
                 <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total de Crises</span>
               </div>
-              <div className="mt-2.5">
-                <span className="text-2xl font-extrabold text-rose-600 block">{stats.totalSeizures}</span>
-                <span className="text-[10px] text-slate-400 leading-tight">Em {stats.seizureDays} de {stats.totalDays} dias registrados</span>
+              <div className="mt-2.5 space-y-2">
+                <div>
+                  <span className="text-2xl font-extrabold text-rose-600 block">{stats.totalSeizures}</span>
+                  <span className="text-[10px] text-slate-400 leading-tight">Em {stats.seizureDays} de {stats.totalDays} dias registrados</span>
+                </div>
+                {stats.totalSeizures > 0 && (
+                  <div className="pt-2 border-t border-rose-100/60 space-y-1 text-[11px] font-semibold text-slate-600">
+                    <div className="flex justify-between">
+                      <span className="text-emerald-700 flex items-center gap-1">🟢 Fracas:</span>
+                      <span className="font-extrabold text-emerald-800">{stats.totalLight}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-amber-650 flex items-center gap-1">🟡 Médias:</span>
+                      <span className="font-extrabold text-amber-800">{stats.totalMedium}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-rose-650 flex items-center gap-1">🔴 Fortes:</span>
+                      <span className="font-extrabold text-rose-800">{stats.totalStrong}</span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -421,13 +468,34 @@ export default function ReportDashboard({ logs, childName = "Criança" }: Report
             
             {/* Chart: Total seizures stacked periods */}
             <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-md">
-              <div className="flex justify-between items-center mb-4 border-b border-slate-50 pb-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 border-b border-slate-50 pb-2">
                 <div>
                   <h4 className="font-bold text-sm text-slate-700">Frequência de Crises no Tempo</h4>
-                  <p className="text-[10px] text-slate-400">Distribuição segmentada por horários ocorrido</p>
+                  <p className="text-[10px] text-slate-400">Distribuição por horários ou por intensidade</p>
                 </div>
-                <div className="text-right">
-                  <span className="text-[10px] bg-rose-50 px-2 py-0.5 rounded text-rose-700 font-extrabold shadow-xs">Total: {stats.totalSeizures}</span>
+                <div className="flex items-center gap-1.5 bg-slate-100 p-0.5 rounded-lg no-print">
+                  <button
+                    type="button"
+                    onClick={() => setCrisesChartMode('period')}
+                    className={`text-[9px] font-black uppercase px-2 py-1 rounded transition select-none cursor-pointer ${
+                      crisesChartMode === 'period'
+                        ? 'bg-rose-500 text-white shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Por Horário
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCrisesChartMode('intensity')}
+                    className={`text-[9px] font-black uppercase px-2 py-1 rounded transition select-none cursor-pointer ${
+                      crisesChartMode === 'intensity'
+                        ? 'bg-rose-500 text-white shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Por Intensidade
+                  </button>
                 </div>
               </div>
 
@@ -439,9 +507,19 @@ export default function ReportDashboard({ logs, childName = "Criança" }: Report
                     <YAxis stroke="#94a3b8" allowDecimals={false} />
                     <Tooltip />
                     <Legend />
-                    <Bar dataKey="Manhã" stackId="a" fill="#38bdf8" />
-                    <Bar dataKey="Tarde" stackId="a" fill="#fb923c" />
-                    <Bar dataKey="Noite/Despertar" stackId="a" fill="#818cf8" />
+                    {crisesChartMode === 'period' ? (
+                      <>
+                        <Bar dataKey="Manhã" stackId="a" fill="#38bdf8" name="Manhã" />
+                        <Bar dataKey="Tarde" stackId="a" fill="#fb923c" name="Tarde" />
+                        <Bar dataKey="Noite/Despertar" stackId="a" fill="#818cf8" name="Noite/Despertar" />
+                      </>
+                    ) : (
+                      <>
+                        <Bar dataKey="Fracas (Leves)" stackId="a" fill="#10b981" name="Fracas (Leves)" />
+                        <Bar dataKey="Médias" stackId="a" fill="#f59e0b" name="Médias" />
+                        <Bar dataKey="Fortes" stackId="a" fill="#ef4444" name="Fortes" />
+                      </>
+                    )}
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -528,6 +606,14 @@ export default function ReportDashboard({ logs, childName = "Criança" }: Report
               <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
                 {filteredLogs.map(log => {
                   const hasCrises = log.seizures.occurred;
+                  const logMorning = log.seizures.morningDetails || { light: 0, medium: 0, strong: 0 };
+                  const logAfternoon = log.seizures.afternoonDetails || { light: 0, medium: 0, strong: 0 };
+                  const logNight = log.seizures.nightDetails || { light: 0, medium: 0, strong: 0 };
+
+                  const logLight = (logMorning.light || 0) + (logAfternoon.light || 0) + (logNight.light || 0);
+                  const logMedium = (logMorning.medium || 0) + (logAfternoon.medium || 0) + (logNight.medium || 0);
+                  const logStrong = (logMorning.strong || 0) + (logAfternoon.strong || 0) + (logNight.strong || 0);
+
                   return (
                     <div 
                       key={log.date} 
@@ -554,6 +640,15 @@ export default function ReportDashboard({ logs, childName = "Criança" }: Report
                           </span>
                         </div>
                       </div>
+
+                      {hasCrises && (
+                        <div className="bg-rose-50/20 rounded-xl p-2.5 border border-rose-100/30 flex flex-wrap gap-x-4 gap-y-1 text-[11px] font-bold">
+                          <span className="text-rose-950 font-extrabold uppercase text-[10px]">Intensidades:</span>
+                          <span className="text-emerald-700 flex items-center gap-1">🟢 Fracas (Leves): {logLight}</span>
+                          <span className="text-amber-700 flex items-center gap-1">🟡 Médias: {logMedium}</span>
+                          <span className="text-rose-700 flex items-center gap-1">🔴 Fortes: {logStrong}</span>
+                        </div>
+                      )}
 
                       {/* Observations text row */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-slate-600">

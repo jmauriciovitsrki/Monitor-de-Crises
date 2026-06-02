@@ -107,6 +107,15 @@ export default function RecordHistory({ logs, onEdit, onDelete }: RecordHistoryP
                       </span>
                     </div>
 
+                    {hasCrises && (
+                      <div className="flex flex-wrap gap-x-3 gap-y-1 text-slate-500 font-bold text-[10px] mt-1 pt-1 border-t border-slate-100">
+                        <span className="text-[9px] uppercase tracking-tight text-slate-400">Intensidade:</span>
+                        <span className="text-emerald-600 flex items-center gap-0.5">🟢 Fracas (Leves): {((log.seizures.morningDetails?.light || 0) + (log.seizures.afternoonDetails?.light || 0) + (log.seizures.nightDetails?.light || 0))}</span>
+                        <span className="text-amber-600 flex items-center gap-0.5">🟡 Médias: {((log.seizures.morningDetails?.medium || 0) + (log.seizures.afternoonDetails?.medium || 0) + (log.seizures.nightDetails?.medium || 0))}</span>
+                        <span className="text-rose-650 flex items-center gap-0.5">🔴 Fortes: {((log.seizures.morningDetails?.strong || 0) + (log.seizures.afternoonDetails?.strong || 0) + (log.seizures.nightDetails?.strong || 0))}</span>
+                      </div>
+                    )}
+
                     {/* Observations Row text snippet if exists */}
                     {(log.seizures.observations || log.sleep.observations) && (
                       <p className="text-[11px] text-slate-400 italic max-w-md line-clamp-1 pt-0.5 leading-relaxed">
