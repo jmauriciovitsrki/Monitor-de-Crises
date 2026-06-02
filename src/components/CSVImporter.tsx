@@ -172,7 +172,22 @@ const cleanNumber = (val: any, defaultVal: number): number => {
   const str = String(val).trim();
   if (!str) return defaultVal;
 
+  // Se parecer uma data (contém traços ou barras na estrutura de data, ex: YYYY-MM-DD ou DD/MM/AAAA)
+  if (/\d+[-/]\d+[-/]\d+/.test(str)) {
+    return defaultVal;
+  }
+
+  // Se for uma data ISO completa
+  if (str.includes('T') && !isNaN(Date.parse(str))) {
+    return defaultVal;
+  }
+
   const cleaned = str.replace(',', '.');
+  // Se for formato de hora, tipo HH:MM, evite extrair como número puro
+  if (/^\d{1,2}:\d{2}$/.test(cleaned)) {
+    return defaultVal;
+  }
+
   const match = cleaned.match(/-?\d+(\.\d+)?/);
   if (match) {
     const num = parseFloat(match[0]);
@@ -228,11 +243,11 @@ const autoMatchHeaders = (headers: string[]): ColumnMapping => {
       newMapping.sleepObs = header;
     } else if (hNorm.includes('teve crise') || hNorm.includes('crise?') || hNorm.includes('ocorreu') || (hNorm.includes('crise') && !hNorm.includes('obs') && !hNorm.includes('gatilho') && !hNorm.includes('manha') && !hNorm.includes('tarde') && !hNorm.includes('noite'))) {
       newMapping.seizuresOccurred = header;
-    } else if (hNorm.includes('manha') || hNorm.includes('morning')) {
+    } else if ((hNorm.includes('manha') || hNorm.includes('morning')) && !hNorm.includes('obs') && !hNorm.includes('sono') && !hNorm.includes('medic') && !hNorm.includes('remedio')) {
       newMapping.seizureMorning = header;
-    } else if (hNorm.includes('tarde') || hNorm.includes('afternoon')) {
+    } else if ((hNorm.includes('tarde') || hNorm.includes('afternoon')) && !hNorm.includes('obs') && !hNorm.includes('sono') && !hNorm.includes('medic') && !hNorm.includes('remedio')) {
       newMapping.seizureAfternoon = header;
-    } else if (hNorm.includes('noite') || hNorm.includes('night') || hNorm.includes('madrugada')) {
+    } else if ((hNorm.includes('noite') || hNorm.includes('night') || hNorm.includes('madrugada')) && !hNorm.includes('obs') && !hNorm.includes('sono') && !hNorm.includes('medic') && !hNorm.includes('remedio')) {
       newMapping.seizureNight = header;
     } else if (hNorm.includes('gatilho') || hNorm.includes('trigger')) {
       newMapping.seizureTriggers = header;
@@ -297,7 +312,7 @@ export default function CSVImporter({ onImportComplete, onClose }: CSVImporterPr
     setErrorMsg(null);
     setFileName(file.name);
     
-    const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
+    const isExcel = file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls');
     
     const reader = new FileReader();
     
@@ -395,24 +410,24 @@ export default function CSVImporter({ onImportComplete, onClose }: CSVImporterPr
     try {
       const logsResult: Partial<DailyLog>[] = [];
       
-      const dateIndex = csvHeaders.indexOf(mapping.date);
-      const sleepStatusIndex = csvHeaders.indexOf(mapping.sleepStatus);
-      const sleepTimeIndex = csvHeaders.indexOf(mapping.sleepTime);
-      const wakeTimeIndex = csvHeaders.indexOf(mapping.wakeTime);
-      const sleepQualityIndex = csvHeaders.indexOf(mapping.sleepQuality);
-      const wakeUpCountIndex = csvHeaders.indexOf(mapping.wakeUpCount);
-      const sleepObsIndex = csvHeaders.indexOf(mapping.sleepObs);
-      const seizuresOccurredIndex = csvHeaders.indexOf(mapping.seizuresOccurred);
-      const seizureMorningIndex = csvHeaders.indexOf(mapping.seizureMorning);
-      const seizureAfternoonIndex = csvHeaders.indexOf(mapping.seizureAfternoon);
-      const seizureNightIndex = csvHeaders.indexOf(mapping.seizureNight);
-      const seizureTriggersIndex = csvHeaders.indexOf(mapping.seizureTriggers);
-      const seizureObsIndex = csvHeaders.indexOf(mapping.seizureObs);
-      const medicationTakenIndex = csvHeaders.indexOf(mapping.medicationTaken);
-      const medicationObsIndex = csvHeaders.indexOf(mapping.medicationObs);
+      const dateIndex = mapping.date ? csvHeaders.indexOf(mapping.date) : -1;
+      const sleepStatusIndex = mapping.sleepStatus ? csvHeaders.indexOf(mapping.sleepStatus) : -1;
+      const sleepTimeIndex = mapping.sleepTime ? csvHeaders.indexOf(mapping.sleepTime) : -1;
+      const wakeTimeIndex = mapping.wakeTime ? csvHeaders.indexOf(mapping.wakeTime) : -1;
+      const sleepQualityIndex = mapping.sleepQuality ? csvHeaders.indexOf(mapping.sleepQuality) : -1;
+      const wakeUpCountIndex = mapping.wakeUpCount ? csvHeaders.indexOf(mapping.wakeUpCount) : -1;
+      const sleepObsIndex = mapping.sleepObs ? csvHeaders.indexOf(mapping.sleepObs) : -1;
+      const seizuresOccurredIndex = mapping.seizuresOccurred ? csvHeaders.indexOf(mapping.seizuresOccurred) : -1;
+      const seizureMorningIndex = mapping.seizureMorning ? csvHeaders.indexOf(mapping.seizureMorning) : -1;
+      const seizureAfternoonIndex = mapping.seizureAfternoon ? csvHeaders.indexOf(mapping.seizureAfternoon) : -1;
+      const seizureNightIndex = mapping.seizureNight ? csvHeaders.indexOf(mapping.seizureNight) : -1;
+      const seizureTriggersIndex = mapping.seizureTriggers ? csvHeaders.indexOf(mapping.seizureTriggers) : -1;
+      const seizureObsIndex = mapping.seizureObs ? csvHeaders.indexOf(mapping.seizureObs) : -1;
+      const medicationTakenIndex = mapping.medicationTaken ? csvHeaders.indexOf(mapping.medicationTaken) : -1;
+      const medicationObsIndex = mapping.medicationObs ? csvHeaders.indexOf(mapping.medicationObs) : -1;
 
       csvRows.forEach((row, i) => {
-        const rawDate = row[dateIndex];
+        const rawDate = dateIndex !== -1 ? row[dateIndex] : null;
         if (rawDate === null || rawDate === undefined || String(rawDate).trim() === '') return; // Skip empty date rows
 
         const formattedDate = cleanDate(rawDate);
@@ -420,6 +435,21 @@ export default function CSVImporter({ onImportComplete, onClose }: CSVImporterPr
           console.warn(`Pulei a linha ${i + 1} por possuir uma data inválida: ${rawDate}`);
           return;
         }
+
+        // Check if there is any actual data recorded in this row besides the pre-filled date
+        const hasOtherData = [
+          sleepStatusIndex, sleepTimeIndex, wakeTimeIndex, sleepQualityIndex,
+          wakeUpCountIndex, sleepObsIndex, seizuresOccurredIndex, seizureMorningIndex,
+          seizureAfternoonIndex, seizureNightIndex, seizureTriggersIndex,
+          seizureObsIndex, medicationTakenIndex, medicationObsIndex
+        ].some(idx => {
+          if (idx === -1) return false;
+          const val = row[idx];
+          return val !== null && val !== undefined && String(val).trim() !== '';
+        });
+
+        // Skip rows that are empty except for the date
+        if (!hasOtherData) return;
 
         // Sleep parsing
         const rawSleepStatus = sleepStatusIndex !== -1 ? String(row[sleepStatusIndex] || '').toLowerCase() : '';
@@ -443,7 +473,22 @@ export default function CSVImporter({ onImportComplete, onClose }: CSVImporterPr
         const ngtCount = seizureNightIndex !== -1 ? cleanNumber(row[seizureNightIndex], 0) : 0;
 
         const calculatedSum = mornCount + aftCount + ngtCount;
-        if (calculatedSum > 0) occurredVal = true;
+        const occurredCount = cleanNumber(rawOccurred, 0);
+
+        if (calculatedSum > 0 || occurredCount > 0) {
+          occurredVal = true;
+        }
+
+        let finalTotalCount = 0;
+        if (occurredVal) {
+          if (calculatedSum > 0) {
+            finalTotalCount = calculatedSum;
+          } else if (occurredCount > 0) {
+            finalTotalCount = occurredCount;
+          } else {
+            finalTotalCount = 1; // Default to 1 if declared occurred but no count defined
+          }
+        }
 
         // Medication parsing
         const rawMed = medicationTakenIndex !== -1 ? row[medicationTakenIndex] : '';
@@ -469,7 +514,7 @@ export default function CSVImporter({ onImportComplete, onClose }: CSVImporterPr
             morningDetails: { light: mornCount, medium: 0, strong: 0 }, // fallback values
             afternoonDetails: { light: aftCount, medium: 0, strong: 0 },
             nightDetails: { light: ngtCount, medium: 0, strong: 0 },
-            totalCount: occurredVal ? (calculatedSum || 1) : 0, // default to 1 if declared occurred but no count defined
+            totalCount: finalTotalCount,
             triggers: seizureTriggersIndex !== -1 ? String(row[seizureTriggersIndex] || '').trim() : '',
             observations: seizureObsIndex !== -1 ? String(row[seizureObsIndex] || '').trim() : ''
           },
