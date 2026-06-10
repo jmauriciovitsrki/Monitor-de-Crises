@@ -32,6 +32,27 @@ h1, h2, h3, h4 {
     background: transparent !important;
   }
   
+  /* Prevent charts, rankings and other dashboard sections from being cut in half across pages */
+  #reports-dashboard .bg-white,
+  #reports-dashboard [class*="bg-gradient-to"] {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* Do not scroll detailed clinical observations when printing; render all entries fully inline */
+  #reports-dashboard .max-h-80 {
+    max-height: none !important;
+    overflow: visible !important;
+    overflow-y: visible !important;
+    padding-right: 0 !important;
+  }
+
+  /* Prevent individual raw clinical day cards from splitting across page breaks */
+  #reports-dashboard .space-y-3 > div {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+  
   .recharts-responsive-container {
     page-break-inside: avoid !important;
     max-height: 250px !important;
