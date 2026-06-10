@@ -138,12 +138,35 @@
         }
       },
       "required": ["userId", "date", "sleep", "seizures", "medication"]
+    },
+    "Medication": {
+      "title": "Medication",
+      "description": "Registration of medication with times and recurrence settings.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "dosage": { "type": "string" },
+        "times": { "type": "array" },
+        "type": { "type": "string", "enum": ["recurrent", "temporary"] },
+        "recurrenceDays": { "type": "array" },
+        "startDate": { "type": "string" },
+        "endDate": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["userId", "name", "dosage", "times", "type", "recurrenceDays"]
     }
   },
   "firestore": {
     "users/{userId}/logs/{logId}": {
       "schema": "DailyLog",
       "description": "Stores user-specific historical logs of sleep, seizures, and medications."
+    },
+    "users/{userId}/medications/{medicationId}": {
+      "schema": "Medication",
+      "description": "Stores user-specific customized medications agenda."
     }
   }
 }

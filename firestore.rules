@@ -48,5 +48,17 @@ service cloud.firestore {
       // Delete rule allowing users to curate their historical data partitions
       allow delete: if isOwner(userId);
     }
+
+    // Medication collection rules
+    match /users/{userId}/medications/{medicationId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId)
+        && isValidId(medicationId)
+        && request.resource.data != null && request.resource.data.userId == userId;
+      allow update: if isOwner(userId)
+        && isValidId(medicationId)
+        && request.resource.data != null && request.resource.data.userId == userId;
+      allow delete: if isOwner(userId);
+    }
   }
 }

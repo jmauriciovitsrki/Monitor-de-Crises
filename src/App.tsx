@@ -4,16 +4,18 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { 
   collection, doc, setDoc, deleteDoc, onSnapshot, serverTimestamp, Timestamp, writeBatch 
 } from 'firebase/firestore';
-import { DailyLog, SleepStatus, SeizureTimingCounts } from './types';
+import { DailyLog, SleepStatus, SeizureTimingCounts, Medication } from './types';
 import AuthScreen from './components/AuthScreen';
 import DailyForm from './components/DailyForm';
 import CSVImporter from './components/CSVImporter';
 import ReportDashboard from './components/ReportDashboard';
 import RecordHistory from './components/RecordHistory';
+import MedicationAgenda from './components/MedicationAgenda';
 
 import { 
   Heart, Calendar, FileSpreadsheet, BarChart3, LogOut, CheckSquare, RefreshCw, 
-  Settings2, Smartphone, ShieldCheck, Info, Download, Upload, Cloud, CloudOff, Database
+  Settings2, Smartphone, ShieldCheck, Info, Download, Upload, Cloud, CloudOff, Database,
+  Pill, Clock
 } from 'lucide-react';
 import { signInWithPopup, signInWithRedirect, getRedirectResult } from 'firebase/auth';
 import { googleProvider } from './firebase';
@@ -27,10 +29,13 @@ export default function App() {
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
   const [isLinkingCloud, setIsLinkingCloud] = useState(false);
 
+  const [medications, setMedications] = useState<Medication[]>([]);
+
   // Modals / workflows triggers
   const [showForm, setShowForm] = useState(false);
   const [editingLog, setEditingLog] = useState<DailyLog | null>(null);
   const [showImporter, setShowImporter] = useState(false);
+  const [showMedAgenda, setShowMedAgenda] = useState(false);
   const [activeTab, setActiveTab] = useState<'history' | 'reports'>('history');
 
   // Automated prompt status tracker (stores if we checked or prompted today already during this browser tab session)
@@ -132,6 +137,64 @@ export default function App() {
         (error) => {
           handleFirestoreError(error, OperationType.LIST, userLogsPath);
           setLogsLoading(false);
+        }
+      );
+
+      return unsubscribe;
+    }
+  }, [user, isLocalDemo]);
+
+  // 2.5 Load and sync medications (either Firebase snapshot channel or localStorage cache)
+  useEffect(() => {
+    setMedications([]);
+    if (isLocalDemo) {
+      try {
+        const stored = localStorage.getItem('medications');
+        if (stored) {
+          setMedications(JSON.parse(stored));
+        }
+      } catch (err) {
+        console.error('Error loading offline medications:', err);
+      }
+    } else if (user) {
+      const userMedsPath = `users/${user.uid}/medications`;
+      const q = collection(db, 'users', user.uid, 'medications');
+      
+      const unsubscribe = onSnapshot(
+        q,
+        (snapshot) => {
+          const fetchedMeds: Medication[] = [];
+          
+          snapshot.forEach((docSnapshot) => {
+            const data = docSnapshot.data();
+            
+            let createdAtStr = new Date().toISOString();
+            let updatedAtStr = new Date().toISOString();
+
+            if (data.createdAt instanceof Timestamp) {
+              createdAtStr = data.createdAt.toDate().toISOString();
+            } else if (typeof data.createdAt === 'string') {
+              createdAtStr = data.createdAt;
+            }
+
+            if (data.updatedAt instanceof Timestamp) {
+              updatedAtStr = data.updatedAt.toDate().toISOString();
+            } else if (typeof data.updatedAt === 'string') {
+              updatedAtStr = data.updatedAt;
+            }
+
+            fetchedMeds.push({
+              ...(data as Omit<Medication, 'id'>),
+              id: docSnapshot.id,
+              createdAt: createdAtStr,
+              updatedAt: updatedAtStr,
+            } as Medication);
+          });
+          
+          setMedications(fetchedMeds);
+        },
+        (error) => {
+          handleFirestoreError(error, OperationType.LIST, userMedsPath);
         }
       );
 
@@ -254,6 +317,78 @@ export default function App() {
         await deleteDoc(doc(db, 'users', user.uid, 'logs', dateStr));
       } catch (err) {
         handleFirestoreError(err, OperationType.DELETE, pathForDelete);
+      }
+    }
+  };
+
+  const handleSaveMedication = async (partialMed: Partial<Medication>) => {
+    if (isLocalDemo) {
+      let updatedMeds = [...medications];
+      const uuid = partialMed.id || `local_med_${Date.now()}`;
+      
+      const fullMed: Medication = {
+        userId: 'local-demo-user',
+        name: partialMed.name!,
+        dosage: partialMed.dosage!,
+        times: partialMed.times!,
+        type: partialMed.type!,
+        recurrenceDays: partialMed.recurrenceDays!,
+        startDate: partialMed.startDate,
+        endDate: partialMed.endDate,
+        id: uuid,
+        createdAt: partialMed.id ? (medications.find(m => m.id === partialMed.id)?.createdAt || new Date().toISOString()) : new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      const existingIdx = medications.findIndex(m => m.id === uuid);
+      if (existingIdx !== -1) {
+        updatedMeds[existingIdx] = fullMed;
+      } else {
+        updatedMeds.push(fullMed);
+      }
+
+      setMedications(updatedMeds);
+      localStorage.setItem('medications', JSON.stringify(updatedMeds));
+    } else if (user) {
+      const medId = partialMed.id || doc(collection(db, 'users', user.uid, 'medications')).id;
+      const pathStr = `users/${user.uid}/medications/${medId}`;
+      
+      try {
+        const ref = doc(db, 'users', user.uid, 'medications', medId);
+        
+        const isCreate = !partialMed.id;
+        
+        const docPayload = {
+          userId: user.uid,
+          name: partialMed.name,
+          dosage: partialMed.dosage,
+          times: partialMed.times,
+          type: partialMed.type,
+          recurrenceDays: partialMed.recurrenceDays || [],
+          startDate: partialMed.startDate || '',
+          endDate: partialMed.endDate || '',
+          createdAt: isCreate ? serverTimestamp() : (medications.find(m => m.id === medId)?.createdAt || serverTimestamp()),
+          updatedAt: serverTimestamp(),
+        };
+        
+        await setDoc(ref, docPayload, { merge: true });
+      } catch (err) {
+        handleFirestoreError(err, OperationType.WRITE, pathStr);
+      }
+    }
+  };
+
+  const handleDeleteMedication = async (id: string) => {
+    if (isLocalDemo) {
+      const updatedMeds = medications.filter(m => m.id !== id);
+      setMedications(updatedMeds);
+      localStorage.setItem('medications', JSON.stringify(updatedMeds));
+    } else if (user) {
+      const pathStr = `users/${user.uid}/medications/${id}`;
+      try {
+        await deleteDoc(doc(db, 'users', user.uid, 'medications', id));
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, pathStr);
       }
     }
   };
@@ -674,6 +809,15 @@ export default function App() {
             </button>
 
             <button
+              id="btn-medication-agenda"
+              onClick={() => setShowMedAgenda(true)}
+              className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-xl shadow-xs transition select-none cursor-pointer"
+            >
+              <Pill className="h-4 w-4 text-amber-500 animate-pulse" />
+              Agenda de Medicamentos
+            </button>
+
+            <button
               id="btn-add-today"
               onClick={() => {
                 setEditingLog(null);
@@ -719,6 +863,7 @@ export default function App() {
           initialDate={editingLog?.date}
           existingLog={editingLog}
           existingDates={logs.map((log) => log.date)}
+          medications={medications}
           onSave={handleSaveLog}
           onClose={() => {
             setShowForm(false);
@@ -731,6 +876,16 @@ export default function App() {
         <CSVImporter
           onImportComplete={handleBatchImport}
           onClose={() => setShowImporter(false)}
+        />
+      )}
+
+      {showMedAgenda && (
+        <MedicationAgenda
+          medications={medications}
+          onSaveMedication={handleSaveMedication}
+          onDeleteMedication={handleDeleteMedication}
+          childName={childName}
+          onClose={() => setShowMedAgenda(false)}
         />
       )}
 

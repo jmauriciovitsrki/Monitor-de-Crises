@@ -52,3 +52,17 @@ export interface ChildProfile {
   name: string;
   birthDate?: string;
 }
+
+export interface Medication {
+  id?: string;
+  userId: string;
+  name: string;
+  dosage: string; // e.g. "10 gotas", "1 comprimido"
+  times: string[]; // e.g., ["08:00", "20:00"]
+  type: 'recurrent' | 'temporary';
+  recurrenceDays: string[]; // e.g. ["seg", "ter", "qua", "qui", "sex", "sab", "dom"]
+  startDate?: string; // YYYY-MM-DD
+  endDate?: string; // YYYY-MM-DD
+  createdAt: string;
+  updatedAt: string;
+}

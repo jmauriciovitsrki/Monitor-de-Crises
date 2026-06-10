@@ -1,9 +1,10 @@
 import { calculateSleepDuration } from '../utils';
-import { DailyLog, SeizureTimingCounts, SleepStatus } from '../types';
+import { DailyLog, SeizureTimingCounts, SleepStatus, Medication } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect } from 'react';
 import { 
-  X, Moon, ShieldAlert, BadgeInfo, Check, Plus, Minus, Info, Clipboard, Activity 
+  X, Moon, ShieldAlert, BadgeInfo, Check, Plus, Minus, Info, Clipboard, Activity,
+  Pill, Clock
 } from 'lucide-react';
 
 interface DailyFormProps {
@@ -12,6 +13,7 @@ interface DailyFormProps {
   onClose: () => void;
   existingLog?: DailyLog | null;
   existingDates?: string[];
+  medications?: Medication[];
 }
 
 const TRIGGER_CHIPS = [
@@ -19,9 +21,42 @@ const TRIGGER_CHIPS = [
   'Luz Piscante/Telas', 'Dentição', 'Cansaço Físico', 'Mudança Climática'
 ];
 
-export default function DailyForm({ initialDate, onSave, onClose, existingLog, existingDates = [] }: DailyFormProps) {
+export default function DailyForm({ initialDate, onSave, onClose, existingLog, existingDates = [], medications = [] }: DailyFormProps) {
   // Date setup
   const [dateStr, setDateStr] = useState<string>(() => initialDate || new Date().toISOString().split('T')[0]);
+
+  // Get active day abbreviation (e.g. 'seg', 'ter', 'qua'...)
+  const getDayAbbreviationForForm = (dateVal: string) => {
+    if (!dateVal) return 'seg';
+    // Use mid-day to prevent timezone shifts
+    const d = new Date(dateVal + 'T12:00:00');
+    const day = d.getDay(); // 0 = Sun, 1 = Mon, ..., 6 = Sat
+    const weekdayAbbrs = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
+    return weekdayAbbrs[day];
+  };
+
+  const formDayAbbr = getDayAbbreviationForForm(dateStr);
+  
+  // Resolve matching medications for this specific log date
+  const todaysExpectedMeds = medications.filter(med => {
+    if (med.type === 'recurrent') {
+      return med.recurrenceDays.includes(formDayAbbr);
+    } else {
+      if (!med.startDate) return false;
+      const currentMs = new Date(dateStr + 'T12:00:00').getTime();
+      const startMs = new Date(med.startDate + 'T12:05:00').getTime();
+      if (med.endDate) {
+        const endMs = new Date(med.endDate + 'T23:59:00').getTime();
+        return currentMs >= startMs && currentMs <= endMs;
+      }
+      return currentMs >= startMs;
+    }
+  }).flatMap(med => {
+    return med.times.map(time => ({
+      ...med,
+      time
+    }));
+  }).sort((a, b) => a.time.localeCompare(b.time));
 
   // Forms state
   const [sleepStatus, setSleepStatus] = useState<SleepStatus>('dormiu');
@@ -610,6 +645,40 @@ export default function DailyForm({ initialDate, onSave, onClose, existingLog, e
                 <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
                   <Clipboard className="h-5 w-5 text-indigo-500" />
                   <h3 className="font-bold text-slate-700">Controle de Medicação e Resumo</h3>
+                </div>
+
+                {/* Scheduled Medications list helper */}
+                <div className="bg-amber-50/40 p-4 rounded-2xl border border-amber-200/40 space-y-2.5 text-left">
+                  <div className="flex items-center gap-2">
+                    <Pill className="h-4.5 w-4.5 text-amber-600 animate-pulse" />
+                    <span className="text-xs font-black uppercase text-amber-800 tracking-wider">
+                      Medicamentos Agendados para este Dia ({dateStr.split('-').reverse().join('/')})
+                    </span>
+                  </div>
+
+                  {todaysExpectedMeds.length === 0 ? (
+                    <p className="text-[11px] text-slate-500 font-bold leading-relaxed">
+                      Nenhum medicamento pré-cadastrado na agenda para as {formDayAbbr === 'seg' ? 'segundas-feiras' : formDayAbbr === 'ter' ? 'terças-feiras' : formDayAbbr === 'qua' ? 'quartas-feiras' : formDayAbbr === 'qui' ? 'quintas-feiras' : formDayAbbr === 'sex' ? 'sextas-feiras' : formDayAbbr === 'sab' ? 'sábados' : formDayAbbr === 'dom' ? 'domingos' : 'este dia'}.
+                    </p>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {todaysExpectedMeds.map((med, idx) => (
+                        <div key={`${med.id}-${med.time}-${idx}`} className="bg-white border border-slate-150 rounded-xl p-2.5 flex items-center justify-between text-xs font-bold text-slate-700 shadow-3xs">
+                          <div className="min-w-0 mr-2">
+                            <span className="text-[11px] font-black text-slate-800 block truncate">{med.name}</span>
+                            <span className="text-[10px] text-slate-400 font-semibold block mt-0.5">Dose: {med.dosage}</span>
+                          </div>
+                          <div className="bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10px] font-black px-2 py-0.5 rounded-md flex items-center gap-1 shrink-0">
+                            <Clock className="h-3 w-3 text-indigo-500" />
+                            {med.time}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-[10px] text-slate-400 font-medium leading-relaxed">
+                    *Você pode configurar novos remédios ou alterar horários clicando no botão <strong>Agenda de Medicamentos</strong> na tela inicial.
+                  </p>
                 </div>
 
                 {/* Medication boolean indicator */}
