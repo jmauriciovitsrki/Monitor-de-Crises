@@ -682,7 +682,7 @@ export default function App() {
               className="flex items-center gap-2 px-5 py-2.5 bg-rose-500 hover:bg-rose-600 text-white font-extrabold text-xs rounded-xl shadow-md transition select-none cursor-pointer"
             >
               <Calendar className="h-4 w-4 text-white" />
-              Registrar Dia de Hoje
+              Fazer um Registro
             </button>
           </div>
 
@@ -718,6 +718,7 @@ export default function App() {
         <DailyForm
           initialDate={editingLog?.date}
           existingLog={editingLog}
+          existingDates={logs.map((log) => log.date)}
           onSave={handleSaveLog}
           onClose={() => {
             setShowForm(false);

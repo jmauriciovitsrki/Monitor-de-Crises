@@ -11,6 +11,7 @@ interface DailyFormProps {
   onSave: (log: Partial<DailyLog>) => Promise<void>;
   onClose: () => void;
   existingLog?: DailyLog | null;
+  existingDates?: string[];
 }
 
 const TRIGGER_CHIPS = [
@@ -18,9 +19,9 @@ const TRIGGER_CHIPS = [
   'Luz Piscante/Telas', 'Dentição', 'Cansaço Físico', 'Mudança Climática'
 ];
 
-export default function DailyForm({ initialDate, onSave, onClose, existingLog }: DailyFormProps) {
+export default function DailyForm({ initialDate, onSave, onClose, existingLog, existingDates = [] }: DailyFormProps) {
   // Date setup
-  const dateStr = initialDate || new Date().toISOString().split('T')[0];
+  const [dateStr, setDateStr] = useState<string>(() => initialDate || new Date().toISOString().split('T')[0]);
 
   // Forms state
   const [sleepStatus, setSleepStatus] = useState<SleepStatus>('dormiu');
@@ -54,6 +55,7 @@ export default function DailyForm({ initialDate, onSave, onClose, existingLog }:
   // Hydrate form if editing
   useEffect(() => {
     if (existingLog) {
+      setDateStr(existingLog.date);
       setSleepStatus(existingLog.sleep.status);
       setSleepTime(existingLog.sleep.sleepTime || '21:00');
       setWakeTime(existingLog.sleep.wakeTime || '07:00');
@@ -222,6 +224,42 @@ export default function DailyForm({ initialDate, onSave, onClose, existingLog }:
                 transition={{ duration: 0.2 }}
                 className="space-y-5"
               >
+                {/* Seleção de Data Retroativa */}
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/60 space-y-2">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    Data do Registro
+                  </label>
+                  <input
+                    type="date"
+                    value={dateStr}
+                    max={new Date().toISOString().split('T')[0]}
+                    disabled={!!existingLog}
+                    onChange={(e) => setDateStr(e.target.value)}
+                    className="w-full bg-white text-slate-700 text-sm font-bold rounded-xl border border-slate-200 p-2.5 outline-none focus:border-indigo-400 disabled:bg-slate-100 disabled:text-slate-400 cursor-pointer disabled:cursor-not-allowed"
+                  />
+                  {!existingLog ? (
+                    <p className="text-[10px] text-slate-400 font-semibold leading-relaxed">
+                      Selecione a data retroativa desejada ou mantenha do dia de hoje.
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-slate-400 font-semibold leading-relaxed">
+                      A data de um registro que já existe não pode ser alterada.
+                    </p>
+                  )}
+
+                  {!existingLog && existingDates.includes(dateStr) && (
+                    <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3 flex gap-2 items-start mt-2">
+                      <ShieldAlert className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+                      <div>
+                        <span className="font-extrabold text-[11px] block">Atenção: Já existe um registro para esta data!</span>
+                        <p className="text-[10px] leading-relaxed text-amber-700 font-semibold mt-0.5">
+                          Ao salvar, as informações deste formulário irão <strong className="text-amber-900">substituir</strong> o registro anterior de {dateStr.split('-').reverse().join('/')}.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
                   <Moon className="h-5 w-5 text-indigo-500" />
                   <h3 className="font-bold text-slate-700">Qualidade e Parâmetros de Sono</h3>
