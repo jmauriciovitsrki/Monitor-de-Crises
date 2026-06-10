@@ -98,7 +98,7 @@ export default function RecordHistory({ logs, onEdit, onDelete }: RecordHistoryP
                       </span>
                       {log.sleep.status !== 'não dormiu' && (
                         <span className="text-slate-400">
-                          Qualidade: {log.sleep.quality}⭐ • Wakes: {log.sleep.wakeUpCount}
+                          Qualidade: {log.sleep.quality}⭐ • Despertares: {log.sleep.wakeUpCount}
                         </span>
                       )}
                       <span className="flex items-center gap-1 font-medium">
