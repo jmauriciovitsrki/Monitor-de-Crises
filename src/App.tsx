@@ -889,6 +889,22 @@ export default function App() {
         />
       )}
 
+      {/* Floating Action Button for prompt, frozen access to new registrations */}
+      {!showForm && !showImporter && !showMedAgenda && (
+        <button
+          id="btn-add-floating"
+          onClick={() => {
+            setEditingLog(null);
+            setShowForm(true);
+          }}
+          className="fixed bottom-6 right-6 md:bottom-8 md:right-8 z-40 flex items-center gap-2 px-5 py-3.5 bg-rose-500 hover:bg-rose-600 active:scale-95 text-white font-extrabold text-xs md:text-sm rounded-full shadow-2xl transition-all duration-300 select-none cursor-pointer hover:scale-105 border border-white/20"
+          title="Fazer um novo registro rápido"
+        >
+          <Calendar className="h-4.5 w-4.5 text-white animate-pulse" />
+          <span>Fazer um Registro</span>
+        </button>
+      )}
+
       {/* Footer minimal padding */}
       <div className="py-4 mt-auto" />
 
